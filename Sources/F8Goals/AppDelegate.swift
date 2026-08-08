@@ -1,0 +1,182 @@
+import AppKit
+import SwiftUI
+
+/// 无边框、可成为 Key 的全屏覆盖窗口
+private final class OverlayWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    private let store = GoalStore()
+    private let model = OverlayModel()
+    private var windows: [NSWindow] = []
+    private var statusItem: NSStatusItem?
+
+    private var isVisible = false
+    private var lastPress = Date.distantPast
+    /// 双击判定窗口：双击 F8 呼出；可见时单击 F8 或 Esc 收起
+    private let doubleTapInterval: TimeInterval = 0.45
+
+    // MARK: - 生命周期
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        buildWindows()
+        setupStatusItem()
+        installEscapeMonitor()
+
+        HotkeyManager.shared.onPress = { [weak self] in
+            self?.handleHotkey()
+        }
+        HotkeyManager.shared.register()
+
+        // 调试入口：F8Goals --show / --hide
+        if CommandLine.arguments.contains("--show") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.show() }
+        } else if CommandLine.arguments.contains("--hide") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.hide() }
+        }
+    }
+
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+
+    // MARK: - 窗口（每个屏幕一块）
+
+    private func buildWindows() {
+        for screen in NSScreen.screens {
+            let window = OverlayWindow(
+                contentRect: screen.frame,
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false,
+                screen: screen
+            )
+            window.level = .screenSaver
+            window.isOpaque = false
+            window.backgroundColor = .clear
+            window.hasShadow = false
+            window.ignoresMouseEvents = false
+            window.isReleasedWhenClosed = false
+            window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
+            window.alphaValue = 0
+            window.contentView = NSHostingView(rootView: OverlayView(store: store, model: model))
+            windows.append(window)
+        }
+    }
+
+    // MARK: - 显示 / 隐藏（渐变动画）
+
+    func show() {
+        guard !isVisible else { return }
+        isVisible = true
+
+        for window in windows {
+            window.alphaValue = 0
+            window.orderFrontRegardless()
+        }
+        if #available(macOS 14.0, *) {
+            NSApp.activate()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+        (windows.first { $0.screen == NSScreen.main } ?? windows.first)?.makeKey()
+
+        // 窗口仅淡入; 文字生长动画由 SwiftUI 行级状态驱动
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isVisible else { return }
+            withAnimation(.easeOut(duration: 0.4)) {
+                self.model.animatedIn = true
+            }
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.4
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                for window in self.windows {
+                    window.animator().alphaValue = 1.0
+                }
+            }
+        }
+    }
+
+    func hide() {
+        guard isVisible else { return }
+        isVisible = false
+
+        withAnimation(.easeOut(duration: 0.24)) {
+            model.animatedIn = false
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = 0.24
+            context.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            for window in windows {
+                window.animator().alphaValue = 0
+            }
+        }) { [weak self] in
+            guard let self else { return }
+            MainActor.assumeIsolated {
+                for window in self.windows { window.orderOut(nil) }
+                self.model.editingID = nil
+                self.model.inputText = ""
+            }
+        }
+    }
+
+    // MARK: - 热键逻辑
+
+    private func handleHotkey() {
+        if isVisible {
+            hide() // 可见时，单击 F8 即收起
+            return
+        }
+        let now = Date()
+        if now.timeIntervalSince(lastPress) < doubleTapInterval {
+            lastPress = .distantPast
+            show() // 双击 F8 呼出
+        } else {
+            lastPress = now
+        }
+    }
+
+    // MARK: - Esc：编辑中 → 取消编辑；有草稿 → 清空；否则收起
+
+    private func installEscapeMonitor() {
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.keyCode == 53 else { return event }
+            self.handleEscape()
+            return nil
+        }
+    }
+
+    private func handleEscape() {
+        if model.editingID != nil {
+            model.editingID = nil
+        } else if !model.inputText.isEmpty {
+            model.inputText = ""
+        } else {
+            hide()
+        }
+    }
+
+    // MARK: - 菜单栏
+
+    private func setupStatusItem() {
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+        if let button = item.button {
+            button.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "F8Goals")
+        }
+        let menu = NSMenu()
+        let toggle = NSMenuItem(title: "显示 / 隐藏目标（双击 F10）", action: #selector(toggleFromMenu), keyEquivalent: "")
+        toggle.target = self
+        menu.addItem(toggle)
+        menu.addItem(.separator())
+        let quit = NSMenuItem(title: "退出 F8Goals", action: #selector(quitApp), keyEquivalent: "q")
+        quit.target = self
+        menu.addItem(quit)
+        item.menu = menu
+        statusItem = item
+    }
+
+    @objc private func toggleFromMenu() { isVisible ? hide() : show() }
+    @objc private func quitApp() { NSApp.terminate(nil) }
+}
