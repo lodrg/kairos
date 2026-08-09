@@ -42,11 +42,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         HotkeyManager.shared.register()
 
-        // 调试入口：F8Goals --show / --hide
+        // 调试入口：F8Goals --show / --hide / --show-settings / --show-arming
+        // 后两个是给「只能用键盘到达的状态」留的口子：远程或没有辅助功能权限时，
+        // 没法真的按 ⌘. / ⌘T，只能靠启动参数把那个状态摆出来看一眼
         if CommandLine.arguments.contains("--show") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.show() }
         } else if CommandLine.arguments.contains("--hide") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in self?.hide() }
+        } else if CommandLine.arguments.contains("--show-settings") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.show()
+                self?.model.showSettings = true
+            }
+        } else if CommandLine.arguments.contains("--show-arming") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                self.show()
+                self.model.draftMinutesIndex = 3
+                self.model.isChoosingDuration = true
+            }
         }
     }
 

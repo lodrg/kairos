@@ -19,22 +19,29 @@ struct AuroraBackground: View {
                 TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !active)) { timeline in
                     let t = timeline.date.timeIntervalSinceReferenceDate
 
-                    MeshGradient(
-                        width: 3,
-                        height: 3,
-                        points: meshPoints(t),
-                        colors: Palette.aurora,
-                        smoothsColors: true
-                    )
+                    // 这个 ZStack 是必须的：TimelineView 的内容闭包如果直接返回两个并列视图，
+                    // 得到的是隐式 TupleView，而 TimelineView 不像 ZStack 那样给多子视图做层叠
+                    // 铺满布局——结果就是背景只盖住屏幕的一部分，目标文字却照样画在全屏范围上。
+                    // 这个 bug 从 Stage 0 把辉光挪进 TimelineView 做呼吸那次就存在，
+                    // 编译、CPU、逻辑测试全都发现不了，只有真的看一眼才看得出来。
+                    ZStack {
+                        MeshGradient(
+                            width: 3,
+                            height: 3,
+                            points: meshPoints(t),
+                            colors: Palette.aurora,
+                            smoothsColors: true
+                        )
 
-                    // 呼吸：辉光透明度沿 7s 周期的慢正弦轻微起伏，默认态下唯一的动。
-                    // 复用同一个 t，不额外起时钟；隐藏时随 TimelineView 一起暂停。
-                    RadialGradient(
-                        colors: [Color.white.opacity(breathingEnabled ? breatheOpacity(t) : 0.045), .clear],
-                        center: .init(x: 0.5, y: 0.32),
-                        startRadius: 0,
-                        endRadius: 820
-                    )
+                        // 呼吸：辉光透明度沿 7s 周期的慢正弦轻微起伏，默认态下唯一的动。
+                        // 复用同一个 t，不额外起时钟；隐藏时随 TimelineView 一起暂停。
+                        RadialGradient(
+                            colors: [Color.white.opacity(breathingEnabled ? breatheOpacity(t) : 0.045), .clear],
+                            center: .init(x: 0.5, y: 0.32),
+                            startRadius: 0,
+                            endRadius: 820
+                        )
+                    }
                 }
             } else {
                 LinearGradient(colors: Palette.aurora, startPoint: .topLeading, endPoint: .bottomTrailing)

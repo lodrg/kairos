@@ -43,6 +43,11 @@ struct OverlayView: View {
         LayoutMetrics(scale: settingsStore.settings.textScale, restingFraction: settingsStore.settings.inputRestingFraction)
     }
 
+    /// 有没有全屏接管画面的东西开着（签到或配置面板）
+    private var isModalUp: Bool {
+        model.pendingCheckInID != nil || model.showSettings
+    }
+
     var body: some View {
         ZStack {
             AuroraBackground(
@@ -52,8 +57,15 @@ struct OverlayView: View {
             )
             .hueRotation(.degrees(store.activeCanvas.hueShift))
             .animation(Motion.canvasSwitch, value: store.activeCanvasID)
+            // 签到 / 配置面板弹出时把目标区整块淡掉，而不是靠 scrim 盖住它——
+            // 盖是盖不干净的：46pt 的大字即使被 0.9 的黑压着也还透得出来，
+            // 跟卡片自己的标题叠在一起像渲染坏了。真正让它退场才干净，
+            // 极光背景留着，视觉身份不丢。
             content
+                .opacity(isModalUp ? 0 : 1)
+                .animation(Motion.reveal, value: isModalUp)
             canvasNameFlash
+                .opacity(isModalUp ? 0 : 1)
             settingsOverlay
             checkInOverlay
         }
@@ -182,13 +194,14 @@ struct OverlayView: View {
 
     enum CheckInAction { case done, keepGoing, snooze, drop }
 
-    /// 到期目标的签到卡片，盖住其余内容。scrim 吞掉点击而不是穿透——
-    /// 这是「强制」的一部分：点卡片外面不能把它关掉，退路只有 Snooze 和菜单栏 Quit
+    /// 到期目标的签到卡片。scrim 吞掉点击而不是穿透——这是「强制」的一部分：
+    /// 点卡片外面不能把它关掉，退路只有 Snooze 和菜单栏 Quit。
+    /// 目标区已经在 body 里整块淡掉了，所以这层只需要压暗极光提高文字对比度，不用去盖内容。
     private var checkInOverlay: some View {
         Group {
             if let id = model.pendingCheckInID, let goal = store.goals.first(where: { $0.id == id }) {
                 ZStack {
-                    Color.black.opacity(0.6)
+                    Color.black.opacity(0.55)
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture {}

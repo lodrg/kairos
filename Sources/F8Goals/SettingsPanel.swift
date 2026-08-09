@@ -15,7 +15,8 @@ struct SettingsPanel: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.62)
+            // 目标区已经在 OverlayView 里整块淡掉了，这层只负责压暗极光让面板文字有对比度
+            Color.black.opacity(0.6)
                 .ignoresSafeArea()
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onClose)
@@ -110,13 +111,23 @@ struct SettingsPanel: View {
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(.white.opacity(0.3))
                     .frame(width: 16)
-                TextField("Add canvas", text: $newCanvasName)
+                TextField("", text: $newCanvasName)
                     .font(.system(size: 16, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
                     .foregroundStyle(.white)
                     .tint(Palette.accent)
                     .focused($focusedField, equals: .newCanvas)
                     .onSubmit(addCanvas)
+                    // 自己画 placeholder：内建那个在这套暗色里几乎看不见，
+                    // 只剩一个 + 号的话根本不知道这行能打字
+                    .overlay(alignment: .leading) {
+                        if newCanvasName.isEmpty {
+                            Text("Add canvas")
+                                .font(.system(size: 16, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.3))
+                                .allowsHitTesting(false)
+                        }
+                    }
             }
         }
     }
