@@ -13,6 +13,7 @@ struct AuroraBackground: View {
         ZStack {
             TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !active)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
+
                 MeshGradient(
                     width: 3,
                     height: 3,
@@ -20,14 +21,16 @@ struct AuroraBackground: View {
                     colors: Palette.aurora,
                     smoothsColors: true
                 )
-            }
 
-            RadialGradient(
-                colors: [Color.white.opacity(0.045), .clear],
-                center: .init(x: 0.5, y: 0.32),
-                startRadius: 0,
-                endRadius: 820
-            )
+                // 呼吸：辉光透明度沿 7s 周期的慢正弦轻微起伏，默认态下唯一的动。
+                // 复用同一个 t，不额外起时钟；隐藏时随 TimelineView 一起暂停。
+                RadialGradient(
+                    colors: [Color.white.opacity(breatheOpacity(t)), .clear],
+                    center: .init(x: 0.5, y: 0.32),
+                    startRadius: 0,
+                    endRadius: 820
+                )
+            }
 
             RadialGradient(
                 colors: [.clear, Color.black.opacity(0.45)],
@@ -46,6 +49,11 @@ struct AuroraBackground: View {
         }
         .ignoresSafeArea()
         .onAppear { if grain == nil { grain = Grain.make() } }
+    }
+
+    /// 0.030 ↔ 0.060，周期 7s。幅度压得很轻——这是默认态下唯一的动，不能抢戏
+    private func breatheOpacity(_ t: Double) -> Double {
+        0.045 + 0.015 * sin(t * (2 * .pi / 7.0))
     }
 
     /// 四角钉死在角上，边中点只沿自己那条边滑动，中心点自由游走。
