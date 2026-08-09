@@ -126,11 +126,16 @@ struct OverlayView: View {
             moveSelection(by: press.key == .downArrow ? 1 : -1)
             return .handled
         }
-        // Tab 双向覆盖两种输入：输入框有字时缩进待建的这条；选中已有目标时把它拆成几条。
-        // 已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift，不是别的键
+        // Tab 一律吃掉，绝不返回 .ignored——放行的话会掉进 AppKit 的焦点循环，
+        // 把光标从输入框抢到旁边的表盘按钮上，于是既打不了字、按空格还会误触计时器。
+        // 已实测：Button 默认可聚焦 + 返回 .ignored，Tab 之后 firstResponder 就变成
+        // KeyViewProxy 而不再是输入框。配置面板开着时例外，放行让表单里的 Tab 正常跳字段。
         .onKeyPress(keys: [.tab]) { press in
-            guard model.animatedIn, model.pendingCheckInID == nil, model.editingID == nil else { return .ignored }
-            return handleTab(shift: press.modifiers.contains(.shift)) ? .handled : .ignored
+            guard model.animatedIn, model.pendingCheckInID == nil, !model.showSettings else { return .ignored }
+            if model.editingID == nil {
+                handleTab(shift: press.modifiers.contains(.shift))
+            }
+            return .handled
         }
         // 签到卡片的四个动作：字母和数字任选一种，签到没弹出时完全不拦截任何键
         .onKeyPress { press in
@@ -502,6 +507,8 @@ struct OverlayView: View {
             .foregroundStyle(model.armedMinutes == nil ? .white.opacity(0.22) : Palette.accent)
         }
         .buttonStyle(.plain)
+        // 不进 Tab 焦点循环：这个按钮被 Tab 选到会误触计时器，而且焦点一离开输入框就打不了字
+        .focusable(false)
         .keyboardShortcut("t", modifiers: .command)
     }
 
@@ -611,24 +618,26 @@ struct OverlayView: View {
     }
 
     /// Tab 双向覆盖两种输入：输入框有字时缩进待建的这条；选中已有目标时把它拆成几条。
+    /// Shift+Tab 退回顶层。已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift。
     /// 选中优先于「最后一条顶层目标」，因为选中是用户明确指的对象
-    private func handleTab(shift: Bool) -> Bool {
+    private func handleTab(shift: Bool) {
         if shift {
-            guard model.inputParentID != nil else { return false }
             model.inputParentID = nil
-            return true
+            return
         }
+        // 有明确选中就挂到那条，哪怕当前已经在给别的目标加子目标——选中是用户明确指的对象
         if let selected = model.selectedID {
             model.inputParentID = selected
             model.selectedID = nil
-            return true
+            return
         }
+        // 没有选中、又已经在子目标模式里：只允许一层嵌套，没有更深的地方可去，不动。
+        // 之前这里会悄悄换成「最后一条顶层目标」，等于偷偷改了父目标
+        guard model.inputParentID == nil else { return }
         if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
            let lastTopLevel = visibleRows.last(where: { $0.depth == 0 })?.goal.id {
             model.inputParentID = lastTopLevel
-            return true
         }
-        return false
     }
 }
 
@@ -727,6 +736,8 @@ struct CheckBox: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        // 同理不进 Tab 焦点循环：键盘操作走上下键选中，方块是给鼠标点的
+        .focusable(false)
         .animation(Motion.fade, value: isDone)
     }
 }
