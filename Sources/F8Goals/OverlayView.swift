@@ -10,7 +10,7 @@ private struct GoalRowInfo: Identifiable {
     let goal: Goal
     let depth: Int
     var id: UUID { goal.id }
-    var height: CGFloat { depth == 0 ? Metrics.rowHeight : Metrics.subRowHeight }
+    func height(_ sizing: LayoutMetrics) -> CGFloat { depth == 0 ? sizing.rowHeight : sizing.subRowHeight }
 }
 
 /// GoalRowInfo 算出实际的 offsetFromBottom 之后的样子，喂给 ForEach
@@ -35,6 +35,12 @@ struct OverlayView: View {
     /// 时长预设，Off 恒在最前面，后面接配置里可编辑的分钟数列表
     private var durationOptions: [Int?] {
         [nil] + settingsStore.settings.durationPresetsMinutes
+    }
+
+    /// 配置面板里「输入栏位置」「文字大小」两个滑块解析出来的实际尺寸；
+    /// 一个整体缩放系数而不是逐个常量独立可调，见 LayoutMetrics 的注释
+    private var sizing: LayoutMetrics {
+        LayoutMetrics(scale: settingsStore.settings.textScale, restingFraction: settingsStore.settings.inputRestingFraction)
     }
 
     var body: some View {
@@ -223,23 +229,24 @@ struct OverlayView: View {
         focusedField = .input
     }
 
-    /// 目标少时输入栏停在 `Metrics.inputRestingFraction` 那个高度；目标堆到要越过上缘时，
-    /// 列表区继续往下长、输入栏跟着下沉；沉到离底部还剩 bottomInset 就停住，
-    /// 再多的目标从顶部渐隐让位。
+    /// 目标少时输入栏停在 `sizing.inputRestingFraction` 那个高度（配置面板可调）；
+    /// 目标堆到要越过上缘时，列表区继续往下长、输入栏跟着下沉；沉到离底部还剩
+    /// bottomInset 就停住，再多的目标从顶部渐隐让位。
     ///
     /// 高度全部由「行高常量 × 行数」累加算出，不测量任何子视图，
     /// 所以不存在「内容高度 → 布局 → 内容高度」的回路。子目标行更矮，
     /// 所以是累加每行各自的高度，不是简单的「行数 × 单一行高」。
     private var content: some View {
         GeometryReader { geo in
+            let sizing = sizing
             let bottomInset: CGFloat = 56
-            let restingHeight = max(0, geo.size.height * Metrics.inputRestingFraction - Metrics.inputBarHeight / 2)
-            let maxHeight = max(Metrics.rowHeight, geo.size.height - Metrics.inputBarHeight - bottomInset)
+            let restingHeight = max(0, geo.size.height * sizing.inputRestingFraction - sizing.inputBarHeight / 2)
+            let maxHeight = max(sizing.rowHeight, geo.size.height - sizing.inputBarHeight - bottomInset)
 
-            let (shown, overflowing) = trimToFit(visibleRows, maxHeight: maxHeight)
-            let rowsHeight = shown.reduce(CGFloat(0)) { $0 + $1.height }
+            let (shown, overflowing) = trimToFit(visibleRows, maxHeight: maxHeight, sizing: sizing)
+            let rowsHeight = shown.reduce(CGFloat(0)) { $0 + $1.height(sizing) }
             let listHeight = min(max(restingHeight, rowsHeight), maxHeight)
-            let area = goalArea(shown: shown).frame(height: listHeight, alignment: .bottom)
+            let area = goalArea(shown: shown, sizing: sizing).frame(height: listHeight, alignment: .bottom)
 
             VStack(spacing: 0) {
                 // mask 会把内容裁到遮罩自身的范围内，所以只在真的需要顶部渐隐时才上。
@@ -252,7 +259,7 @@ struct OverlayView: View {
                 }
 
                 inputBar
-                    .frame(height: Metrics.inputBarHeight)
+                    .frame(height: sizing.inputBarHeight)
 
                 Spacer(minLength: 0)
             }
@@ -296,12 +303,12 @@ struct OverlayView: View {
 
     /// suffix(fitCount) 泛化到不等高的行：从最新（数组末尾，紧贴输入栏）往回累加高度，
     /// 一旦下一行会超过 maxHeight 就停，取能装下的那一段
-    private func trimToFit(_ rows: [GoalRowInfo], maxHeight: CGFloat) -> (shown: [GoalRowInfo], overflowing: Bool) {
+    private func trimToFit(_ rows: [GoalRowInfo], maxHeight: CGFloat, sizing: LayoutMetrics) -> (shown: [GoalRowInfo], overflowing: Bool) {
         guard !rows.isEmpty else { return ([], false) }
         var total: CGFloat = 0
         var cutIndex = rows.count
         for i in stride(from: rows.count - 1, through: 0, by: -1) {
-            let h = rows[i].height
+            let h = rows[i].height(sizing)
             if total + h > maxHeight { break }
             total += h
             cutIndex = i
@@ -319,17 +326,18 @@ struct OverlayView: View {
     /// `.id(activeCanvasID)` 让整块内容在切画布时被当成全新的子树，配合 `.transition`
     /// 做交叉淡入 + 顺方向位移；不做横向滑动是因为滑动要求所有画布常驻视图树，
     /// 而各画布 listHeight 不同，输入框位置会打架。
-    private func goalArea(shown: [GoalRowInfo]) -> some View {
+    private func goalArea(shown: [GoalRowInfo], sizing: LayoutMetrics) -> some View {
         Group {
             if shown.isEmpty {
                 emptyHint
             } else {
                 ZStack(alignment: .bottomLeading) {
-                    ForEach(layout(shown), id: \.id) { placed in
+                    ForEach(layout(shown, sizing: sizing), id: \.id) { placed in
                         GoalRow(
                             goal: placed.info.goal,
                             depth: placed.info.depth,
                             offsetFromBottom: placed.offset,
+                            sizing: sizing,
                             revealed: model.animatedIn,
                             isCompleting: model.completingIDs.contains(placed.info.goal.id),
                             isEditing: model.editingID == placed.info.goal.id,
@@ -351,12 +359,12 @@ struct OverlayView: View {
 
     /// 每行到列表底部的偏移 = 它下面（比它新）所有行的高度之和。纯函数，不量 geometry；
     /// CGFloat 和之前的 Int indexFromBottom 一样是可绑定值，.animation(_:value:) 照样生效
-    private func layout(_ shown: [GoalRowInfo]) -> [PlacedRow] {
+    private func layout(_ shown: [GoalRowInfo], sizing: LayoutMetrics) -> [PlacedRow] {
         var offset: CGFloat = 0
         var placed: [PlacedRow] = []
         for info in shown.reversed() {
             placed.append(PlacedRow(info: info, offset: offset))
-            offset += info.height
+            offset += info.height(sizing)
         }
         return placed.reversed()
     }
@@ -394,7 +402,8 @@ struct OverlayView: View {
     /// 都占着；下面 inputBarHeight-26 是真正的输入行，在这段里居中——这样输入行的竖直
     /// 位置永远不变，不会因为提示行的显隐而上下窜动
     private var inputBar: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let sizing = sizing
+        return VStack(alignment: .leading, spacing: 0) {
             Group {
                 if model.isChoosingDuration {
                     durationPicker
@@ -403,20 +412,20 @@ struct OverlayView: View {
                         .font(.system(size: 17, weight: .medium, design: .rounded))
                         .foregroundStyle(.white.opacity(0.32))
                         .lineLimit(1)
-                        .padding(.leading, Metrics.subIndent)
+                        .padding(.leading, sizing.subIndent)
                         .opacity(model.inputParentID != nil ? 1 : 0)
                 }
             }
             .frame(height: 26, alignment: .bottom)
 
-            HStack(spacing: Metrics.gutter) {
+            HStack(spacing: sizing.gutter) {
                 Image(systemName: "plus")
-                    .font(.system(size: Metrics.boxSize * 0.6, weight: .light))
+                    .font(.system(size: sizing.boxSize * 0.6, weight: .light))
                     .foregroundStyle(.white.opacity(0.24))
-                    .frame(width: Metrics.boxSize, alignment: .center)
+                    .frame(width: sizing.boxSize, alignment: .center)
 
                 TextField("", text: $model.inputText)
-                    .font(.system(size: Metrics.inputFont, weight: .medium, design: .rounded))
+                    .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .input)
                     .onSubmit(handleInputSubmit)
@@ -426,7 +435,7 @@ struct OverlayView: View {
                     .overlay(alignment: .leading) {
                         if model.inputText.isEmpty {
                             Text("New goal")
-                                .font(.system(size: Metrics.inputFont, weight: .medium, design: .rounded))
+                                .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.15))
                                 .allowsHitTesting(false)
                         }
@@ -434,12 +443,12 @@ struct OverlayView: View {
 
                 armIndicator
             }
-            .padding(.leading, model.inputParentID != nil ? Metrics.subIndent : 0)
-            .frame(height: Metrics.inputBarHeight - 26, alignment: .center)
+            .padding(.leading, model.inputParentID != nil ? sizing.subIndent : 0)
+            .frame(height: sizing.inputBarHeight - 26, alignment: .center)
         }
         .padding(.horizontal, 22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Metrics.inputBarHeight)
+        .frame(height: sizing.inputBarHeight)
         .opacity(model.animatedIn ? 1 : 0)
         .animation(Motion.reveal, value: model.animatedIn)
         .animation(Motion.commit, value: model.inputParentID)
@@ -625,6 +634,7 @@ struct GoalRow: View {
     let depth: Int
     /// 到列表底部的距离（累加高度算出）。别的行消失/出现后这个值会变，位置随之动画
     let offsetFromBottom: CGFloat
+    let sizing: LayoutMetrics
     let revealed: Bool
     let isCompleting: Bool
     let isEditing: Bool
@@ -635,12 +645,12 @@ struct GoalRow: View {
     let onBeginEdit: () -> Void
     let onCommitEdit: () -> Void
 
-    private var rowHeight: CGFloat { depth == 0 ? Metrics.rowHeight : Metrics.subRowHeight }
-    private var boxSize: CGFloat { depth == 0 ? Metrics.boxSize : Metrics.subBoxSize }
-    private var font: CGFloat { depth == 0 ? Metrics.goalFont : Metrics.subGoalFont }
+    private var rowHeight: CGFloat { depth == 0 ? sizing.rowHeight : sizing.subRowHeight }
+    private var boxSize: CGFloat { depth == 0 ? sizing.boxSize : sizing.subBoxSize }
+    private var font: CGFloat { depth == 0 ? sizing.goalFont : sizing.subGoalFont }
 
     var body: some View {
-        HStack(spacing: Metrics.gutter) {
+        HStack(spacing: sizing.gutter) {
             CheckBox(isDone: goal.isDone, size: boxSize, action: onToggle)
 
             if isEditing {
@@ -663,7 +673,7 @@ struct GoalRow: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 22)
-        .padding(.leading, depth == 0 ? 0 : Metrics.subIndent)
+        .padding(.leading, depth == 0 ? 0 : sizing.subIndent)
         .frame(height: rowHeight)
         // 选中标记：左边距里一道细竖线，不是描边框——避免整行套一个明显的框体
         .overlay(alignment: .leading) {

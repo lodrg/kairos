@@ -82,3 +82,39 @@ enum Metrics {
     /// 子目标缩进量 = 父目标的方块宽 + 间距，让子目标的方块对齐到父目标文字的起始位置
     static let subIndent: CGFloat = boxSize + gutter
 }
+
+/// `Metrics` 的可配置版本：配置面板里的「输入栏位置」「文字大小」两个滑块解析出来的实际值。
+/// 只有一个整体缩放系数，不是每个常量各自独立可调——独立调的话用户很容易调出
+/// 字比行高还高、方块和文字不成比例的破样子，我又没法截图看出来提前拦住。
+/// `contentWidth` 不跟着缩放：缩放管的是竖直方向的行高/字号，不是横向排版宽度。
+struct LayoutMetrics {
+    let rowHeight: CGFloat
+    let subRowHeight: CGFloat
+    let inputBarHeight: CGFloat
+    let inputRestingFraction: CGFloat
+    let goalFont: CGFloat
+    let subGoalFont: CGFloat
+    let inputFont: CGFloat
+    let boxSize: CGFloat
+    let subBoxSize: CGFloat
+    let gutter: CGFloat
+    let subIndent: CGFloat
+
+    /// scale=1.0、restingFraction=0.58 时数值和 `Metrics` 里硬编码的完全一致——
+    /// 配置面板的默认值必须精确对应旧常量，否则 Stage 5 一上线所有人的布局都会跳一下
+    init(scale: Double, restingFraction: Double) {
+        let s = CGFloat(max(0.75, min(1.35, scale)))
+        rowHeight = Metrics.rowHeight * s
+        subRowHeight = Metrics.subRowHeight * s
+        // 26pt 的「正在给谁加子目标」提示槽不跟着缩放，只有下面的实际输入行缩放
+        inputBarHeight = 26 + 96 * s
+        inputRestingFraction = CGFloat(max(0.35, min(0.75, restingFraction)))
+        goalFont = Metrics.goalFont * s
+        subGoalFont = Metrics.subGoalFont * s
+        inputFont = Metrics.inputFont * s
+        boxSize = Metrics.boxSize * s
+        subBoxSize = Metrics.subBoxSize * s
+        gutter = Metrics.gutter * s
+        subIndent = boxSize + gutter
+    }
+}

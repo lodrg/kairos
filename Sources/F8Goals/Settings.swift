@@ -16,6 +16,10 @@ struct Settings: Codable, Equatable {
     // 外观
     var breathingEnabled = true
     var auroraEnabled = true
+
+    // 布局；默认值必须精确匹配 Metrics 里原来硬编码的常量，见 LayoutMetrics 的注释
+    var inputRestingFraction = 0.58
+    var textScale = 1.0
 }
 
 @MainActor

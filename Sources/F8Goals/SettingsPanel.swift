@@ -29,6 +29,7 @@ struct SettingsPanel: View {
                     countdownSection
                     canvasSection
                     appearanceSection
+                    layoutSection
 
                     Text("Esc to close")
                         .font(.system(size: 13, weight: .regular, design: .rounded))
@@ -134,6 +135,26 @@ struct SettingsPanel: View {
             sectionHeader("APPEARANCE")
             SettingsToggle(label: "Breathing background", isOn: $settingsStore.settings.breathingEnabled)
             SettingsToggle(label: "Aurora background", isOn: $settingsStore.settings.auroraEnabled)
+        }
+    }
+
+    // MARK: - 布局
+
+    /// 一个整体缩放，不是逐项独立可调——独立调很容易调出字比行高还高的破样子，
+    /// 而这里没法截图看出来提前拦住，见 LayoutMetrics 的注释
+    private var layoutSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader("LAYOUT")
+            SettingsPercentStepper(
+                label: "Input bar position",
+                value: $settingsStore.settings.inputRestingFraction,
+                range: 0.35...0.75, step: 0.02
+            )
+            SettingsPercentStepper(
+                label: "Text size",
+                value: $settingsStore.settings.textScale,
+                range: 0.75...1.35, step: 0.05
+            )
         }
     }
 
@@ -251,6 +272,43 @@ struct SettingsStepper: View {
             HStack(spacing: 14) {
                 stepButton("minus") { value = max(range.lowerBound, value - step) }
                 Text("\(value)\(unit)")
+                    .font(.system(size: 16, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.88))
+                    .frame(minWidth: 44)
+                stepButton("plus") { value = min(range.upperBound, value + step) }
+            }
+        }
+    }
+
+    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.6))
+                .frame(width: 24, height: 24)
+                .background(Color.white.opacity(0.07), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 百分比步进器（给 0.0...1.0 范围的比例/缩放系数用）
+
+struct SettingsPercentStepper: View {
+    let label: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let step: Double
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 17, weight: .regular, design: .rounded))
+                .foregroundStyle(.white.opacity(0.75))
+            Spacer()
+            HStack(spacing: 14) {
+                stepButton("minus") { value = max(range.lowerBound, value - step) }
+                Text("\(Int((value * 100).rounded()))%")
                     .font(.system(size: 16, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.88))
                     .frame(minWidth: 44)
