@@ -10,147 +10,154 @@ struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @FocusState private var focusedField: FocusField?
 
-    private let accent = Color(red: 0.45, green: 0.65, blue: 1.0)
-    private let doneGreen = Color(red: 0.30, green: 0.85, blue: 0.60)
-    /// 目标列表与输入栏之间的间距
-    private let inputGap: CGFloat = 36
-
-    @State private var windowHeight: CGFloat = 900
-    /// 输入栏上方的内容（目标列表或空状态）高度
-    @State private var aboveInputHeight: CGFloat = 0
-    /// 输入栏本体高度（不含与列表的间距）
-    @State private var inputBarHeight: CGFloat = 70
-    /// 输入栏中线位置（overlay 坐标系），文字生长动画的起点
-    @State private var inputMidY: CGFloat = 600
-
     var body: some View {
         ZStack {
-            background
-            mainContent
+            AuroraBackground(active: model.animatedIn)
+            content
         }
-        .coordinateSpace(name: "overlay")
-        .background(GeometryReader { geo in
-            Color.clear.onAppear { windowHeight = geo.size.height }
-        })
-        .onChange(of: model.animatedIn) { newValue in
-            if newValue { focusedField = .input }
+        .onChange(of: model.animatedIn) { _, isIn in
+            if isIn { focusedField = .input }
+        }
+        .onChange(of: model.editingID) { _, editing in
+            // 编辑结束（保存或 Esc 取消）后焦点必须交回输入栏，
+            // 否则 @FocusState 还指向已经消失的 .edit(id)，键盘输入无处可去
+            if editing == nil, model.animatedIn { focusedField = .input }
         }
     }
 
-    private var background: some View {
-        ZStack {
-            LinearGradient(
-                colors: [
-                    Color(red: 0.028, green: 0.045, blue: 0.11),
-                    Color(red: 0.075, green: 0.05, blue: 0.22),
-                    Color(red: 0.11, green: 0.045, blue: 0.19),
-                    Color(red: 0.028, green: 0.045, blue: 0.11)
-                ],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            RadialGradient(
-                colors: [Color.white.opacity(0.05), .clear],
-                center: .top, startRadius: 0, endRadius: 700
-            )
+    /// 目标少时输入栏停在 `Metrics.inputRestingFraction` 那个高度；目标堆到要越过上缘时，
+    /// 列表区继续往下长、输入栏跟着下沉；沉到离底部还剩 bottomInset 就停住，
+    /// 再多的目标从顶部渐隐让位。
+    ///
+    /// 高度全部由「行数 × 常量行高」算出，不测量任何子视图，
+    /// 所以不存在「内容高度 → 布局 → 内容高度」的回路。
+    private var content: some View {
+        GeometryReader { geo in
+            let bottomInset: CGFloat = 56
+            let restingHeight = max(0, geo.size.height * Metrics.inputRestingFraction - Metrics.inputBarHeight / 2)
+            let maxHeight = max(Metrics.rowHeight, geo.size.height - Metrics.inputBarHeight - bottomInset)
+            let fitCount = max(1, Int(maxHeight / Metrics.rowHeight))
+
+            let all = visibleGoals
+            let shown = Array(all.suffix(fitCount))
+            let overflowing = all.count > shown.count
+            let listHeight = min(max(restingHeight, CGFloat(shown.count) * Metrics.rowHeight), maxHeight)
+            let area = goalArea(shown: shown).frame(height: listHeight, alignment: .bottom)
+
+            VStack(spacing: 0) {
+                // mask 会把内容裁到遮罩自身的范围内，所以只在真的需要顶部渐隐时才上。
+                // 之前无条件挂遮罩、且遮罩高度是「行数 × 行高」，勾掉一条时它瞬间少一行，
+                // 而剩下的行还停在动画途中的旧位置，于是最上面那行的文字被切掉了顶部。
+                if overflowing {
+                    area.mask(topFade)
+                } else {
+                    area
+                }
+
+                inputBar
+                    .frame(height: Metrics.inputBarHeight)
+
+                Spacer(minLength: 0)
+            }
+            .frame(maxWidth: Metrics.contentWidth)
+            .frame(width: geo.size.width, height: geo.size.height)
+            // 输入栏下沉和回升都走这一条：不管是新建、勾选还是撤销引起的，位置变化一律慢慢挪
+            .animation(Motion.layout, value: listHeight)
         }
-        .ignoresSafeArea()
     }
 
-    /// 显示用列表: 已勾选的排最上面（淡出），未勾选旧的在上下面的新的在下
+    /// 未完成的目标 + 正在淡出的目标。按插入顺序，最新的贴着输入栏。
+    /// 不按完成状态重排——重排会打乱行的身份，导致入场动画被重置、画面闪一下。
     private var visibleGoals: [Goal] {
-        store.goals
-            .filter { goal in
-                if model.hiddenDoneIDs.contains(goal.id) { return false }
-                if goal.isDone {
-                    let elapsed = Date().timeIntervalSince(goal.completedAt ?? .distantPast)
-                    return elapsed < 2.2 // 只保留淡出窗口内的已勾选目标
-                }
-                return true
-            }
-            .sorted { a, b in
-                if a.isDone != b.isDone { return a.isDone }
-                if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-                return a.id.uuidString < b.id.uuidString
-            }
+        store.goals.filter { goal in
+            if model.retiredIDs.contains(goal.id) { return false }
+            if goal.isDone { return model.completingIDs.contains(goal.id) }
+            return true
+        }
     }
 
-    /// 输入栏保持在屏幕正中: 上方内容变高时顶距自动缩小；
-    /// 顶距触底后输入栏随内容往下移（上半屏被填满后）
-    private var topSpace: CGFloat {
-        max(40, windowHeight / 2 - aboveInputHeight - inputGap - inputBarHeight / 2)
-    }
-
-    private var bottomSpace: CGFloat {
-        max(48, windowHeight - topSpace - aboveInputHeight - inputGap - inputBarHeight)
-    }
-
-    private var mainContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: topSpace)
-
-                    Group {
-                        if visibleGoals.isEmpty {
-                            EmptyStateView(animatedIn: model.animatedIn)
-                        } else {
-                            goalList
-                        }
+    /// 行不靠 VStack 自然重排，而是按「第几行 × 常量行高」显式定位。
+    /// 交给 VStack 重排的话，位置变化没有对应的可绑定值，只能靠外层 withAnimation 的
+    /// 环境事务；而行自己的 .animation(_:value:) 会把环境动画挡掉，结果就是瞬间跳位。
+    ///
+    /// 这里不设固定高度：`offset` 不参与布局，高度交给外层的 listHeight 决定，
+    /// 免得容器边界在动画途中裁掉还没走到位的行。
+    private func goalArea(shown: [Goal]) -> some View {
+        Group {
+            if shown.isEmpty {
+                emptyHint
+            } else {
+                ZStack(alignment: .bottomLeading) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, goal in
+                        GoalRow(
+                            goal: goal,
+                            indexFromBottom: shown.count - 1 - index,
+                            revealed: model.animatedIn,
+                            isCompleting: model.completingIDs.contains(goal.id),
+                            isEditing: model.editingID == goal.id,
+                            editText: $model.editText,
+                            focusedField: $focusedField,
+                            onToggle: { complete(goal) },
+                            onBeginEdit: { beginEdit(goal) },
+                            onCommitEdit: { commitEdit() }
+                        )
                     }
-                    .background(GeometryReader { geo in
-                        Color.clear
-                            .onAppear { aboveInputHeight = geo.size.height }
-                            .onChange(of: geo.size.height) { aboveInputHeight = $0 }
-                    })
-
-                    InputBarView(
-                        animatedIn: model.animatedIn,
-                        inputText: $model.inputText,
-                        focusedField: $focusedField,
-                        accent: accent,
-                        onSubmit: { createGoal() }
-                    )
-                    .background(GeometryReader { geo in
-                        Color.clear.onAppear {
-                            let f = geo.frame(in: .named("overlay"))
-                            inputMidY = f.midY
-                            inputBarHeight = f.height
-                        }
-                    })
-                    .padding(.top, inputGap)
-                    .id("input")
-
-                    Color.clear.frame(height: bottomSpace)
                 }
-                // X 轴: 内容收进居中的内容列（两侧留白），不再贴屏幕左缘
-                .frame(maxWidth: 1400)
-                .frame(maxWidth: .infinity)
-            }
-            .onChange(of: store.goals.count) { _ in
-                // 列表变长后把输入栏保持在可见位置
-                withAnimation { proxy.scrollTo("input", anchor: .bottom) }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var goalList: some View {
-        LazyVStack(spacing: 4) {
-            ForEach(Array(visibleGoals.enumerated()), id: \.element.id) { index, goal in
-                GoalRow(
-                    goal: goal,
-                    staggerIndex: visibleGoals.count - 1 - index, // 新的(下面)先出现
-                    inputMidY: inputMidY,
-                    store: store,
-                    model: model,
-                    focusedField: $focusedField,
-                    accent: accent,
-                    doneGreen: doneGreen
-                )
-            }
+    private var topFade: some View {
+        LinearGradient(
+            stops: [
+                .init(color: .clear, location: 0),
+                .init(color: .black, location: 0.16),
+                .init(color: .black, location: 1)
+            ],
+            startPoint: .top,
+            endPoint: .bottom
+        )
+    }
+
+    private var emptyHint: some View {
+        Text("No goals yet")
+            .font(.system(size: 26, weight: .regular, design: .rounded))
+            .foregroundStyle(.white.opacity(0.16))
+            .frame(maxWidth: .infinity, alignment: .center)
+            .padding(.bottom, 26)
+            .opacity(model.animatedIn ? 1 : 0)
+            .animation(Motion.reveal, value: model.animatedIn)
+    }
+
+    private var inputBar: some View {
+        HStack(spacing: Metrics.gutter) {
+            Image(systemName: "plus")
+                .font(.system(size: Metrics.boxSize * 0.6, weight: .light))
+                .foregroundStyle(.white.opacity(0.24))
+                .frame(width: Metrics.boxSize, alignment: .center)
+
+            TextField("", text: $model.inputText)
+                .font(.system(size: Metrics.inputFont, weight: .medium, design: .rounded))
+                .textFieldStyle(.plain)
+                .focused($focusedField, equals: .input)
+                .onSubmit(createGoal)
+                .foregroundStyle(.white)
+                .tint(Palette.accent)
+                // 自己画 placeholder：TextField 内建的那个改不了透明度
+                .overlay(alignment: .leading) {
+                    if model.inputText.isEmpty {
+                        Text("New goal")
+                            .font(.system(size: Metrics.inputFont, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.15))
+                            .allowsHitTesting(false)
+                    }
+                }
         }
-        .padding(.vertical, 6)
+        .padding(.horizontal, 22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(model.animatedIn ? 1 : 0)
+        .animation(Motion.reveal, value: model.animatedIn)
     }
 
     // MARK: - 动作
@@ -158,216 +165,125 @@ struct OverlayView: View {
     private func createGoal() {
         let text = model.inputText
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
-            store.add(text)
-        }
+        withAnimation(Motion.commit) { store.add(text) }
         model.inputText = ""
         focusedField = .input
     }
-}
 
-// MARK: - 目标行（从输入栏位置向上生长到自己的位置）
-
-struct GoalRow: View {
-    let goal: Goal
-    let staggerIndex: Int
-    let inputMidY: CGFloat
-    @ObservedObject var store: GoalStore
-    @ObservedObject var model: OverlayModel
-    var focusedField: FocusState<FocusField?>.Binding
-    let accent: Color
-    let doneGreen: Color
-
-    /// 文字动效: 从输入栏的文字位置出发，向上生长到列表位置
-    @State private var entered = false
-    @State private var entranceOffset: CGFloat = 80
-
-    var body: some View {
-        HStack(spacing: 32) {
-            CheckBox(isDone: goal.isDone, accent: doneGreen) {
-                toggleGoal()
-            }
-
-            if model.editingID == goal.id {
-                TextField("", text: $model.editText)
-                    .font(.system(size: 56, weight: .medium, design: .rounded))
-                    .textFieldStyle(.plain)
-                    .focused(focusedField, equals: .edit(goal.id))
-                    .onSubmit(commitEdit)
-                    .foregroundStyle(.white)
-                    .tint(accent)
-            } else {
-                Text(goal.text)
-                    .font(.system(size: 56, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .contentShape(Rectangle())
-                    .onTapGesture { startEdit() }
-            }
-            Spacer(minLength: 0)
+    private func beginEdit(_ goal: Goal) {
+        // 已经在编辑别的目标时先落盘，否则那一条改了一半的内容会被静默丢掉
+        if let current = model.editingID, current != goal.id {
+            store.update(id: current, text: model.editText)
         }
-        .padding(.vertical, 14)
-        .opacity(goal.isDone && model.fadingDoneIDs.contains(goal.id) ? 0 : 1)
-        .background(GeometryReader { geo in
-            Color.clear.onAppear {
-                let f = geo.frame(in: .named("overlay"))
-                entranceOffset = inputMidY - f.midY // 起点 = 输入栏位置
-            }
-        })
-        .offset(y: entered ? 0 : entranceOffset)
-        .scaleEffect(entered ? 1.0 : 0.4, anchor: .bottom)
-        .opacity(entered ? 1 : 0)
-        .onAppear {
-            if model.animatedIn { animateIn() } // 新建目标时立即播放
-        }
-        .onChange(of: model.animatedIn) { newValue in
-            if newValue {
-                animateIn() // 每次呼出重新播放文字生长
-            } else {
-                entered = false // 收起时静默复位
-            }
-        }
-    }
-
-    private func animateIn() {
-        withAnimation(.easeOut(duration: 0.55).delay(Double(staggerIndex) * 0.07)) {
-            entered = true
-        }
-    }
-
-    private func toggleGoal() {
-        if goal.isDone {
-            withAnimation(.easeInOut(duration: 0.4)) {
-                store.toggle(goal.id)
-                model.fadingDoneIDs.remove(goal.id)
-                model.hiddenDoneIDs.remove(goal.id)
-            }
-        } else {
-            withAnimation(.easeInOut(duration: 0.6)) {
-                store.toggle(goal.id)
-            }
-            withAnimation(.easeIn(duration: 2.0)) {
-                _ = model.fadingDoneIDs.insert(goal.id)
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.2) { [weak model] in
-                guard let model, model.fadingDoneIDs.contains(goal.id) else { return }
-                withAnimation(.easeIn(duration: 0.2)) {
-                    _ = model.hiddenDoneIDs.insert(goal.id)
-                }
-            }
-        }
-    }
-
-    private func startEdit() {
         model.editingID = goal.id
         model.editText = goal.text
-        focusedField.wrappedValue = .edit(goal.id)
+        focusedField = .edit(goal.id)
     }
 
     private func commitEdit() {
         guard let id = model.editingID else { return }
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
-            store.update(id: id, text: model.editText)
-        }
+        withAnimation(Motion.commit) { store.update(id: id, text: model.editText) }
         model.editingID = nil
-        focusedField.wrappedValue = .input
+    }
+
+    private func complete(_ goal: Goal) {
+        if goal.isDone {
+            model.completingIDs.remove(goal.id)
+            model.retiredIDs.remove(goal.id)
+            withAnimation(Motion.commit) { store.toggle(goal.id) }
+            return
+        }
+
+        store.toggle(goal.id)
+        model.completingIDs.insert(goal.id)
+
+        let id = goal.id
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Motion.completion))
+            // 期间被撤销就不再退场
+            guard model.completingIDs.contains(id) else { return }
+            model.completingIDs.remove(id)
+            withAnimation(Motion.commit) { _ = model.retiredIDs.insert(id) }
+        }
     }
 }
 
-// MARK: - 空状态（文字生长）
+// MARK: - 目标行
 
-struct EmptyStateView: View {
-    let animatedIn: Bool
-    @State private var entered = false
-
-    var body: some View {
-        VStack(spacing: 18) {
-            Image(systemName: "target")
-                .font(.system(size: 64, weight: .ultraLight))
-                .foregroundStyle(.white.opacity(0.22))
-            Text("还没有目标")
-                .font(.system(size: 52, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.32))
-            Text("直接打字，回车创建第一个目标")
-                .font(.system(size: 26))
-                .foregroundStyle(.white.opacity(0.25))
-        }
-        .padding(.bottom, 40)
-        .scaleEffect(entered ? 1.0 : 0.6)
-        .opacity(entered ? 1 : 0)
-        .onAppear { if animatedIn { enter() } }
-        .onChange(of: animatedIn) { newValue in
-            if newValue { enter() } else { entered = false }
-        }
-    }
-
-    private func enter() {
-        withAnimation(.easeOut(duration: 0.55).delay(0.1)) { entered = true }
-    }
-}
-
-// MARK: - 输入栏（淡入 + 轻微生长）
-
-struct InputBarView: View {
-    let animatedIn: Bool
-    @Binding var inputText: String
+/// 入场、退场只有透明度变化；位置由 indexFromBottom 显式算出，自己动画。
+/// 行内不存动画状态、不量 geometry——原来每行各自 @State + GeometryReader
+/// 抓一次布局，抓到的是还没稳定的值，而且永不重算。
+struct GoalRow: View {
+    let goal: Goal
+    /// 从下往上数第几行（0 = 紧贴输入栏那行）。别的目标消失后这个值会变，位置随之动画
+    let indexFromBottom: Int
+    let revealed: Bool
+    let isCompleting: Bool
+    let isEditing: Bool
+    @Binding var editText: String
     var focusedField: FocusState<FocusField?>.Binding
-    let accent: Color
-    let onSubmit: () -> Void
-
-    @State private var entered = false
+    let onToggle: () -> Void
+    let onBeginEdit: () -> Void
+    let onCommitEdit: () -> Void
 
     var body: some View {
-        HStack(spacing: 24) {
-            Image(systemName: "plus.circle.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(accent)
-            TextField("输入新目标，回车创建", text: $inputText)
-                .font(.system(size: 52, weight: .medium, design: .rounded))
-                .textFieldStyle(.plain)
-                .focused(focusedField, equals: .input)
-                .onSubmit(onSubmit)
-                .foregroundStyle(.white)
-                .tint(accent)
-        }
-        .scaleEffect(entered ? 1.0 : 0.85)
-        .opacity(entered ? 1 : 0)
-        .onAppear { if animatedIn { enter() } }
-        .onChange(of: animatedIn) { newValue in
-            if newValue { enter() } else { entered = false }
-        }
-    }
+        HStack(spacing: Metrics.gutter) {
+            CheckBox(isDone: goal.isDone, action: onToggle)
 
-    private func enter() {
-        withAnimation(.easeOut(duration: 0.45).delay(0.12)) { entered = true }
+            if isEditing {
+                TextField("", text: $editText)
+                    .font(.system(size: Metrics.goalFont, weight: .medium, design: .rounded))
+                    .textFieldStyle(.plain)
+                    .focused(focusedField, equals: .edit(goal.id))
+                    .onSubmit(onCommitEdit)
+                    .foregroundStyle(.white)
+                    .tint(Palette.accent)
+            } else {
+                Text(goal.text)
+                    .font(.system(size: Metrics.goalFont, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.6)
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onBeginEdit)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 22)
+        .frame(height: Metrics.rowHeight)
+        .offset(y: -CGFloat(indexFromBottom) * Metrics.rowHeight)
+        .opacity(isCompleting ? 0 : (revealed ? 1 : 0))
+        .animation(Motion.layout, value: indexFromBottom)
+        .animation(Motion.reveal, value: revealed)
+        .animation(Motion.retire, value: isCompleting)
+        // 新建的目标淡入，而不是直接冒出来
+        .transition(.opacity)
     }
 }
 
-// MARK: - 大号勾选方块
+// MARK: - 勾选方块
 
 struct CheckBox: View {
     let isDone: Bool
-    let accent: Color
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(isDone ? accent : Color.white.opacity(0.07))
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(isDone ? Color.clear : Color.white.opacity(0.55), lineWidth: 3)
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(isDone ? Palette.done : Color.white.opacity(0.05))
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .strokeBorder(isDone ? .clear : .white.opacity(0.4), lineWidth: 2)
                 if isDone {
                     Image(systemName: "checkmark")
-                        .font(.system(size: 26, weight: .bold))
-                        .foregroundStyle(Color.black.opacity(0.8))
-                        .transition(.scale.combined(with: .opacity))
+                        .font(.system(size: Metrics.boxSize * 0.52, weight: .semibold))
+                        .foregroundStyle(.black.opacity(0.75))
                 }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: Metrics.boxSize, height: Metrics.boxSize)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isDone)
+        .animation(Motion.fade, value: isDone)
     }
 }

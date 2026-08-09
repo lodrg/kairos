@@ -31,11 +31,7 @@ final class GoalStore: ObservableObject {
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
-              var decoded = try? JSONDecoder().decode([Goal].self, from: data) else { return }
-        // 旧数据迁移: 已勾选但无完成时间 → 视为很久前完成（不再显示，仅留档）
-        for i in decoded.indices where decoded[i].isDone && decoded[i].completedAt == nil {
-            decoded[i].completedAt = .distantPast
-        }
+              let decoded = try? JSONDecoder().decode([Goal].self, from: data) else { return }
         goals = decoded
     }
 
@@ -84,8 +80,19 @@ final class OverlayModel: ObservableObject {
     @Published var inputText = ""
     @Published var editingID: UUID?
     @Published var editText = ""
-    /// 已勾选、正在上浮渐隐的目标
-    @Published var fadingDoneIDs: Set<UUID> = []
-    /// 渐隐完成、从列表移除的目标（数据仍留在 JSON）
-    @Published var hiddenDoneIDs: Set<UUID> = []
+    /// 正在播放完成动画的目标
+    @Published var completingIDs: Set<UUID> = []
+    /// 完成动画播完、已从列表让位的目标（数据仍留在 JSON）
+    @Published var retiredIDs: Set<UUID> = []
+
+    /// 收起时清空。不清的话这两个集合会随 App 生命周期只增不减，
+    /// 而且下次呼出时上一轮勾选过的目标会带着中间状态重新出现。
+    func resetTransient() {
+        editingID = nil
+        editText = ""
+        inputText = ""
+        completingIDs = []
+        retiredIDs = []
+    }
 }
+
