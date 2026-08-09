@@ -184,6 +184,41 @@ final class GoalStore: ObservableObject {
         activeCanvasID = canvases[next].id
         save()
     }
+
+    /// 按顺序从 Palette.canvasHues 取色，跟色相选择器共用同一份色板
+    @discardableResult
+    func addCanvas(name: String) -> Canvas {
+        let hue = Palette.canvasHues[canvases.count % Palette.canvasHues.count]
+        let canvas = Canvas(name: name, hueShift: hue)
+        canvases.append(canvas)
+        save()
+        return canvas
+    }
+
+    func renameCanvas(_ id: UUID, to name: String) {
+        guard let index = canvases.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        canvases[index].name = trimmed
+        save()
+    }
+
+    func setCanvasHue(_ id: UUID, hue: Double) {
+        guard let index = canvases.firstIndex(where: { $0.id == id }) else { return }
+        canvases[index].hueShift = hue
+        save()
+    }
+
+    /// 删掉画布连同它下面的目标；不允许删到 0 个
+    func deleteCanvas(_ id: UUID) {
+        guard canvases.count > 1, let index = canvases.firstIndex(where: { $0.id == id }) else { return }
+        canvases.remove(at: index)
+        goals.removeAll { $0.canvasID == id }
+        if activeCanvasID == id {
+            activeCanvasID = canvases[min(index, canvases.count - 1)].id
+        }
+        save()
+    }
 }
 
 // MARK: - 覆盖层状态（呼出动画 / 输入 / 编辑）
@@ -214,6 +249,8 @@ final class OverlayModel: ObservableObject {
     @Published var armingTargetID: UUID?
     /// 已确认、等着挂到下一条新建目标上的时长；创建后复位（默认不保持武装）
     @Published var armedMinutes: Int?
+    /// ⌘. 呼出的配置面板
+    @Published var showSettings = false
 
     /// 收起时清空。不清的话这些状态会随 App 生命周期只增不减，
     /// 而且下次呼出时上一轮勾选过的目标、选中态会带着中间状态重新出现。
@@ -229,5 +266,6 @@ final class OverlayModel: ObservableObject {
         isChoosingDuration = false
         armingTargetID = nil
         armedMinutes = nil
+        showSettings = false
     }
 }

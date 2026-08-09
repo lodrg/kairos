@@ -6,30 +6,38 @@ struct AuroraBackground: View {
     /// 覆盖层是否可见。不可见时必须停掉 TimelineView——
     /// 这些窗口在 App 启动后就常驻内存（每屏一块），不暂停就是常年空转。
     let active: Bool
+    /// 关掉只影响辉光是否呼吸，网格照样流动
+    var breathingEnabled = true
+    /// 关掉整个网格动画，退回一张静态渐变——连 TimelineView 都不起，CPU 归零
+    var meshEnabled = true
 
     @State private var grain: Image?
 
     var body: some View {
         ZStack {
-            TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !active)) { timeline in
-                let t = timeline.date.timeIntervalSinceReferenceDate
+            if meshEnabled {
+                TimelineView(.animation(minimumInterval: 1.0 / 15.0, paused: !active)) { timeline in
+                    let t = timeline.date.timeIntervalSinceReferenceDate
 
-                MeshGradient(
-                    width: 3,
-                    height: 3,
-                    points: meshPoints(t),
-                    colors: Palette.aurora,
-                    smoothsColors: true
-                )
+                    MeshGradient(
+                        width: 3,
+                        height: 3,
+                        points: meshPoints(t),
+                        colors: Palette.aurora,
+                        smoothsColors: true
+                    )
 
-                // 呼吸：辉光透明度沿 7s 周期的慢正弦轻微起伏，默认态下唯一的动。
-                // 复用同一个 t，不额外起时钟；隐藏时随 TimelineView 一起暂停。
-                RadialGradient(
-                    colors: [Color.white.opacity(breatheOpacity(t)), .clear],
-                    center: .init(x: 0.5, y: 0.32),
-                    startRadius: 0,
-                    endRadius: 820
-                )
+                    // 呼吸：辉光透明度沿 7s 周期的慢正弦轻微起伏，默认态下唯一的动。
+                    // 复用同一个 t，不额外起时钟；隐藏时随 TimelineView 一起暂停。
+                    RadialGradient(
+                        colors: [Color.white.opacity(breathingEnabled ? breatheOpacity(t) : 0.045), .clear],
+                        center: .init(x: 0.5, y: 0.32),
+                        startRadius: 0,
+                        endRadius: 820
+                    )
+                }
+            } else {
+                LinearGradient(colors: Palette.aurora, startPoint: .topLeading, endPoint: .bottomTrailing)
             }
 
             RadialGradient(

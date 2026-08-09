@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private let store = GoalStore()
     private let model = OverlayModel()
+    private let settingsStore = SettingsStore()
     private var windows: [NSWindow] = []
     private var statusItem: NSStatusItem?
 
@@ -70,7 +71,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
             window.alphaValue = 0
-            window.contentView = NSHostingView(rootView: OverlayView(store: store, model: model))
+            window.contentView = NSHostingView(rootView: OverlayView(store: store, model: model, settingsStore: settingsStore))
             windows.append(window)
         }
     }
@@ -123,11 +124,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 收起时不播内容动画：窗口整体淡出，等透明了再把 animatedIn 复位。
     /// 内容一边往下缩一边淡出会显得拖沓，而且和窗口淡出是两个时钟。
     ///
-    /// 签到未决时整个函数直接不做——这是唯一的收起入口（Esc / 单击 F10 / 菜单栏
-    /// 都走这里），挡在这一处比在每个调用点各自判断更不容易漏掉一条路径。
+    /// 签到未决时整个函数直接不做（除非配置里打开了 checkInEscDismisses）——这是唯一的
+    /// 收起入口（Esc / 单击 F10 / 菜单栏都走这里），挡在这一处比在每个调用点各自判断
+    /// 更不容易漏掉一条路径。
     func hide() {
-        guard isVisible, model.pendingCheckInID == nil else { return }
+        let checkInBlocksHide = model.pendingCheckInID != nil && !settingsStore.settings.checkInEscDismisses
+        guard isVisible, !checkInBlocksHide else { return }
         isVisible = false
+        // 配置允许的话，直接收起就相当于关掉签到卡片本身——不算 Done/Snooze 等任何动作
+        model.pendingCheckInID = nil
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Motion.Duration.dismiss
@@ -174,10 +179,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleEscape() {
-        // 签到未决时 Esc 完全不生效——这是「强制」这件事本身要求的，
-        // Snooze 和菜单栏 Quit 仍然可用，不是真的困死用户
-        guard model.pendingCheckInID == nil else { return }
-        if model.selectedID != nil || model.inputParentID != nil {
+        // 签到未决时 Esc 一级只做「关掉签到卡片」这一件事，且要配置允许才生效——
+        // 默认不允许，这是「强制」这件事本身要求的；Snooze 和菜单栏 Quit 仍然可用，
+        // 不是真的困死用户
+        if model.pendingCheckInID != nil {
+            guard settingsStore.settings.checkInEscDismisses else { return }
+            model.pendingCheckInID = nil
+            return
+        }
+        if model.showSettings {
+            model.showSettings = false
+        } else if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
             model.inputParentID = nil
         } else if model.editingID != nil {

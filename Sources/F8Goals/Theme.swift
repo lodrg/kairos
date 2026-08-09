@@ -53,6 +53,10 @@ enum Palette {
 
     static let accent = Color(red: 0.51, green: 0.68, blue: 1.0)
     static let done = Color(red: 0.36, green: 0.90, blue: 0.66)
+
+    /// 新建画布按顺序从这里取色相；配置面板里的色相选择器也用同一份，
+    /// 保证「自动分配的颜色」和「手动可选的颜色」是同一个集合
+    static let canvasHues: [Double] = [0, 150, 260, 45, 200, 320, 100, 280]
 }
 
 // MARK: - 尺寸

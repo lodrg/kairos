@@ -23,6 +23,7 @@ private struct PlacedRow: Identifiable {
 struct OverlayView: View {
     @ObservedObject var store: GoalStore
     @ObservedObject var model: OverlayModel
+    @ObservedObject var settingsStore: SettingsStore
     @FocusState private var focusedField: FocusField?
 
     /// 切画布时的行进方向（+1 下一个 / -1 上一个），决定交叉淡入的偏移朝向
@@ -31,21 +32,33 @@ struct OverlayView: View {
     @State private var showCanvasName = false
     @State private var nameFlashTask: Task<Void, Never>?
 
-    /// 时长预设：Off + 四档。硬编码到 Stage 4 配置面板做出来才会变成可配置项
-    private static let durationPresets: [Int?] = [nil, 5, 15, 25, 45]
-    private static let snoozeMinutes = 5
+    /// 时长预设，Off 恒在最前面，后面接配置里可编辑的分钟数列表
+    private var durationOptions: [Int?] {
+        [nil] + settingsStore.settings.durationPresetsMinutes
+    }
 
     var body: some View {
         ZStack {
-            AuroraBackground(active: model.animatedIn)
-                .hueRotation(.degrees(store.activeCanvas.hueShift))
-                .animation(Motion.canvasSwitch, value: store.activeCanvasID)
+            AuroraBackground(
+                active: model.animatedIn,
+                breathingEnabled: settingsStore.settings.breathingEnabled,
+                meshEnabled: settingsStore.settings.auroraEnabled
+            )
+            .hueRotation(.degrees(store.activeCanvas.hueShift))
+            .animation(Motion.canvasSwitch, value: store.activeCanvasID)
             content
             canvasNameFlash
+            settingsOverlay
             checkInOverlay
         }
         .onChange(of: model.animatedIn) { _, isIn in
-            if isIn { focusedField = .input }
+            if isIn {
+                focusedField = .input
+                // 自动武装：呼出时如果配置了「新目标自动武装」且当前没有别的武装状态，直接挂上默认时长
+                if settingsStore.settings.autoArmNewGoals, model.armedMinutes == nil {
+                    model.armedMinutes = settingsStore.settings.defaultMinutes
+                }
+            }
         }
         .onChange(of: model.editingID) { _, editing in
             // 编辑结束（保存或 Esc 取消）后焦点必须交回输入栏，
@@ -61,6 +74,20 @@ struct OverlayView: View {
                 focusedField = .input
             }
         }
+        .onChange(of: model.showSettings) { _, showing in
+            if showing {
+                focusedField = nil
+            } else if model.animatedIn {
+                focusedField = .input
+            }
+        }
+        // ⌘. 呼出配置面板；签到未决时不生效，跟其它按键一样让签到独占键盘
+        .onKeyPress(keys: [KeyEquivalent(".")]) { press in
+            guard model.animatedIn, model.pendingCheckInID == nil,
+                  press.modifiers.contains(.command) else { return .ignored }
+            model.showSettings.toggle()
+            return .handled
+        }
         // 方向键切画布，但只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截——
         // 已验证：即使 onKeyPress 挂在这个远离 TextField 的外层容器上，方向键事件依然会
         // 冒泡到这里；返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
@@ -75,7 +102,7 @@ struct OverlayView: View {
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
             guard model.isChoosingDuration else { return .ignored }
             let delta = press.key == .rightArrow ? 1 : -1
-            model.draftMinutesIndex = max(0, min(Self.durationPresets.count - 1, model.draftMinutesIndex + delta))
+            model.draftMinutesIndex = max(0, min(durationOptions.count - 1, model.draftMinutesIndex + delta))
             return .handled
         }
         // 上下键移动选中行，同样只在输入框为空、不在编辑、没有签到弹出时拦截
@@ -133,6 +160,18 @@ struct OverlayView: View {
             .allowsHitTesting(false)
     }
 
+    // MARK: - 配置面板
+
+    private var settingsOverlay: some View {
+        Group {
+            if model.showSettings {
+                SettingsPanel(settingsStore: settingsStore, store: store, onClose: { model.showSettings = false })
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.reveal, value: model.showSettings)
+    }
+
     // MARK: - 强制签到
 
     enum CheckInAction { case done, keepGoing, snooze, drop }
@@ -177,7 +216,7 @@ struct OverlayView: View {
                 store.setTimer(goalID: id, minutes: minutes)
             }
         case .snooze:
-            store.snoozeTimer(goalID: id, minutes: Self.snoozeMinutes)
+            store.snoozeTimer(goalID: id, minutes: settingsStore.settings.snoozeMinutes)
         case .drop:
             store.update(id: id, text: "")
         }
@@ -415,7 +454,7 @@ struct OverlayView: View {
     /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理
     private var durationPicker: some View {
         HStack(spacing: 8) {
-            ForEach(Array(Self.durationPresets.enumerated()), id: \.offset) { index, minutes in
+            ForEach(Array(durationOptions.enumerated()), id: \.offset) { index, minutes in
                 let active = index == model.draftMinutesIndex
                 Text(minutes.map { "\($0)m" } ?? "Off")
                     .font(.system(size: 14, weight: .medium, design: .rounded))
@@ -456,7 +495,7 @@ struct OverlayView: View {
     private func handleInputSubmit() {
         guard model.pendingCheckInID == nil else { return }
         if model.isChoosingDuration {
-            let minutes = Self.durationPresets[model.draftMinutesIndex]
+            let minutes = durationOptions[model.draftMinutesIndex]
             if let target = model.armingTargetID {
                 store.setTimer(goalID: target, minutes: minutes)
             } else {
@@ -473,8 +512,10 @@ struct OverlayView: View {
         model.inputText = ""
         focusedField = .input
         // inputParentID 故意不清——连续回车能逐条加子目标，直到 Shift+Tab / Esc 主动退回顶层。
-        // armedMinutes 用一次就清——「创建后是否保持武装」是配置项，默认不保持
-        model.armedMinutes = nil
+        // armedMinutes 是否保留由「创建后是否保持武装」这个配置项决定，默认不保留
+        if !settingsStore.settings.keepArmedAfterCreate {
+            model.armedMinutes = nil
+        }
     }
 
     /// ⌘T / 点表盘图标：选中了目标（且没在打字）就武装那一条本身；否则武装下一条新建目标
@@ -487,10 +528,12 @@ struct OverlayView: View {
         if let selected = model.selectedID, model.inputText.isEmpty {
             model.armingTargetID = selected
             let current = store.goals.first(where: { $0.id == selected })?.timer?.minutes
-            model.draftMinutesIndex = Self.durationPresets.firstIndex(of: current) ?? 2
+            model.draftMinutesIndex = durationOptions.firstIndex(of: current)
+                ?? durationOptions.firstIndex(of: settingsStore.settings.defaultMinutes) ?? 0
         } else {
             model.armingTargetID = nil
-            model.draftMinutesIndex = Self.durationPresets.firstIndex(of: model.armedMinutes) ?? 2
+            model.draftMinutesIndex = durationOptions.firstIndex(of: model.armedMinutes)
+                ?? durationOptions.firstIndex(of: settingsStore.settings.defaultMinutes) ?? 0
         }
         model.isChoosingDuration = true
     }
