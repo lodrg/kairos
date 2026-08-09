@@ -10,10 +10,19 @@ struct OverlayView: View {
     @ObservedObject var model: OverlayModel
     @FocusState private var focusedField: FocusField?
 
+    /// 切画布时的行进方向（+1 下一个 / -1 上一个），决定交叉淡入的偏移朝向
+    @State private var switchDirection: Int = 1
+    /// 画布名的临时提示：切换时淡入，停一下后淡出
+    @State private var showCanvasName = false
+    @State private var nameFlashTask: Task<Void, Never>?
+
     var body: some View {
         ZStack {
             AuroraBackground(active: model.animatedIn)
+                .hueRotation(.degrees(store.activeCanvas.hueShift))
+                .animation(Motion.canvasSwitch, value: store.activeCanvasID)
             content
+            canvasNameFlash
         }
         .onChange(of: model.animatedIn) { _, isIn in
             if isIn { focusedField = .input }
@@ -23,6 +32,41 @@ struct OverlayView: View {
             // 否则 @FocusState 还指向已经消失的 .edit(id)，键盘输入无处可去
             if editing == nil, model.animatedIn { focusedField = .input }
         }
+        // 方向键切画布，但只在输入框为空、且不在编辑任何目标时拦截——
+        // 已验证：即使 onKeyPress 挂在这个远离 TextField 的外层容器上，方向键事件依然会
+        // 冒泡到这里；返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
+        .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
+            guard model.animatedIn, model.inputText.isEmpty, model.editingID == nil,
+                  store.canvases.count > 1 else { return .ignored }
+            switchCanvas(by: press.key == .rightArrow ? 1 : -1)
+            return .handled
+        }
+    }
+
+    private func switchCanvas(by delta: Int) {
+        switchDirection = delta
+        withAnimation(Motion.canvasSwitch) { store.cycleCanvas(by: delta) }
+        flashCanvasName()
+    }
+
+    private func flashCanvasName() {
+        nameFlashTask?.cancel()
+        withAnimation(Motion.fade) { showCanvasName = true }
+        nameFlashTask = Task {
+            try? await Task.sleep(for: .seconds(1.1))
+            guard !Task.isCancelled else { return }
+            withAnimation(Motion.fade) { showCanvasName = false }
+        }
+    }
+
+    private var canvasNameFlash: some View {
+        Text(store.activeCanvas.name)
+            .font(.system(size: 20, weight: .medium, design: .rounded))
+            .foregroundStyle(.white.opacity(0.5))
+            .padding(.top, 40)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+            .opacity(showCanvasName ? 1 : 0)
+            .allowsHitTesting(false)
     }
 
     /// 目标少时输入栏停在 `Metrics.inputRestingFraction` 那个高度；目标堆到要越过上缘时，
@@ -66,10 +110,11 @@ struct OverlayView: View {
         }
     }
 
-    /// 未完成的目标 + 正在淡出的目标。按插入顺序，最新的贴着输入栏。
+    /// 当前画布里未完成的目标 + 正在淡出的目标。按插入顺序，最新的贴着输入栏。
     /// 不按完成状态重排——重排会打乱行的身份，导致入场动画被重置、画面闪一下。
     private var visibleGoals: [Goal] {
         store.goals.filter { goal in
+            guard goal.canvasID == store.activeCanvasID else { return false }
             if model.retiredIDs.contains(goal.id) { return false }
             if goal.isDone { return model.completingIDs.contains(goal.id) }
             return true
@@ -82,6 +127,10 @@ struct OverlayView: View {
     ///
     /// 这里不设固定高度：`offset` 不参与布局，高度交给外层的 listHeight 决定，
     /// 免得容器边界在动画途中裁掉还没走到位的行。
+    ///
+    /// `.id(activeCanvasID)` 让整块内容在切画布时被当成全新的子树，配合 `.transition`
+    /// 做交叉淡入 + 顺方向位移；不做横向滑动是因为滑动要求所有画布常驻视图树，
+    /// 而各画布 listHeight 不同，输入框位置会打架。
     private func goalArea(shown: [Goal]) -> some View {
         Group {
             if shown.isEmpty {
@@ -106,6 +155,15 @@ struct OverlayView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .id(store.activeCanvasID)
+        .transition(canvasTransition)
+    }
+
+    private var canvasTransition: AnyTransition {
+        .asymmetric(
+            insertion: .opacity.combined(with: .offset(x: CGFloat(switchDirection) * Motion.canvasSwitchTravel)),
+            removal: .opacity.combined(with: .offset(x: CGFloat(-switchDirection) * Motion.canvasSwitchTravel))
+        )
     }
 
     private var topFade: some View {

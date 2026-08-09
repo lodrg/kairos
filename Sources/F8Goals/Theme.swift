@@ -27,6 +27,11 @@ enum Motion {
     /// 分成两个数就会出现「已经看不见但行还占着位置」的错位。
     static let completion: TimeInterval = 0.55
     static let retire = Animation.easeInOut(duration: completion)
+
+    /// 切画布：交叉淡入淡出 + 顺方向小位移，不做整条横向滑动——
+    /// 滑动要求所有画布常驻视图树，且各画布目标数不同、listHeight 不同，输入框位置会打架
+    static let canvasSwitch = Animation.easeInOut(duration: 0.32)
+    static let canvasSwitchTravel: CGFloat = 40
 }
 
 
