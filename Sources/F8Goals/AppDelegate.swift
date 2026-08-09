@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Esc：编辑中 → 取消编辑；有草稿 → 清空；否则收起
+    // MARK: - Esc：先退出选中/子目标态 → 取消编辑 → 清空草稿 → 收起
 
     private func installEscapeMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -169,7 +169,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleEscape() {
-        if model.editingID != nil {
+        if model.selectedID != nil || model.inputParentID != nil {
+            model.selectedID = nil
+            model.inputParentID = nil
+        } else if model.editingID != nil {
             model.editingID = nil
         } else if !model.inputText.isEmpty {
             model.inputText = ""

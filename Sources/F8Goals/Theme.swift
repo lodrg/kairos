@@ -61,12 +61,20 @@ enum Palette {
 /// 量出来再回填 @State 会让「内容高度 → 布局 → 内容高度」形成回路，是抖动的根源。
 enum Metrics {
     static let rowHeight: CGFloat = 78
-    static let inputBarHeight: CGFloat = 96
+    /// 子目标行更矮更小——只允许一层嵌套，46pt 字再缩进一级就没法读了
+    static let subRowHeight: CGFloat = 56
+    /// 输入栏加高到能常驻一条「正在给谁加子目标」的提示行（不显示时占位但透明，
+    /// 不能让输入栏的实际高度随内容变化，否则又是一处「内容决定布局」）
+    static let inputBarHeight: CGFloat = 122
     /// 输入栏静止时中线落在屏幕高度的这个比例处。0.5 是正中，略大于 0.5 更稳
     static let inputRestingFraction: CGFloat = 0.58
     static let goalFont: CGFloat = 46
+    static let subGoalFont: CGFloat = 32
     static let inputFont: CGFloat = 42
     static let contentWidth: CGFloat = 940
     static let boxSize: CGFloat = 38
+    static let subBoxSize: CGFloat = 28
     static let gutter: CGFloat = 28
+    /// 子目标缩进量 = 父目标的方块宽 + 间距，让子目标的方块对齐到父目标文字的起始位置
+    static let subIndent: CGFloat = boxSize + gutter
 }

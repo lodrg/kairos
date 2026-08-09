@@ -179,14 +179,21 @@ final class OverlayModel: ObservableObject {
     @Published var completingIDs: Set<UUID> = []
     /// 完成动画播完、已从列表让位的目标（数据仍留在 JSON）
     @Published var retiredIDs: Set<UUID> = []
+    /// 上下键选中的目标；驱动行的选中标记，也是 Tab 拆子目标的对象
+    @Published var selectedID: UUID?
+    /// 待建目标要挂在谁下面；nil = 新建顶层目标。创建后不清空——
+    /// 这样连续回车能逐条加子目标，直到 Shift+Tab / Esc 主动退回顶层
+    @Published var inputParentID: UUID?
 
-    /// 收起时清空。不清的话这两个集合会随 App 生命周期只增不减，
-    /// 而且下次呼出时上一轮勾选过的目标会带着中间状态重新出现。
+    /// 收起时清空。不清的话这些状态会随 App 生命周期只增不减，
+    /// 而且下次呼出时上一轮勾选过的目标、选中态会带着中间状态重新出现。
     func resetTransient() {
         editingID = nil
         editText = ""
         inputText = ""
         completingIDs = []
         retiredIDs = []
+        selectedID = nil
+        inputParentID = nil
     }
 }
