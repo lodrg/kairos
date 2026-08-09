@@ -31,6 +31,10 @@ struct OverlayView: View {
     @State private var showCanvasName = false
     @State private var nameFlashTask: Task<Void, Never>?
 
+    /// 时长预设：Off + 四档。硬编码到 Stage 4 配置面板做出来才会变成可配置项
+    private static let durationPresets: [Int?] = [nil, 5, 15, 25, 45]
+    private static let snoozeMinutes = 5
+
     var body: some View {
         ZStack {
             AuroraBackground(active: model.animatedIn)
@@ -38,6 +42,7 @@ struct OverlayView: View {
                 .animation(Motion.canvasSwitch, value: store.activeCanvasID)
             content
             canvasNameFlash
+            checkInOverlay
         }
         .onChange(of: model.animatedIn) { _, isIn in
             if isIn { focusedField = .input }
@@ -47,26 +52,56 @@ struct OverlayView: View {
             // 否则 @FocusState 还指向已经消失的 .edit(id)，键盘输入无处可去
             if editing == nil, model.animatedIn { focusedField = .input }
         }
-        // 方向键切画布，但只在输入框为空、且不在编辑任何目标时拦截——
+        .onChange(of: model.pendingCheckInID) { _, pending in
+            // 签到弹出时收走焦点，防止 D/K/S/X 之类的快捷键被打进还聚焦着的输入框；
+            // 签到消失后焦点还给输入栏
+            if pending != nil {
+                focusedField = nil
+            } else if model.animatedIn {
+                focusedField = .input
+            }
+        }
+        // 方向键切画布，但只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截——
         // 已验证：即使 onKeyPress 挂在这个远离 TextField 的外层容器上，方向键事件依然会
         // 冒泡到这里；返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
-            guard model.animatedIn, model.inputText.isEmpty, model.editingID == nil,
+            guard model.animatedIn, model.pendingCheckInID == nil, !model.isChoosingDuration,
+                  model.inputText.isEmpty, model.editingID == nil,
                   store.canvases.count > 1 else { return .ignored }
             switchCanvas(by: press.key == .rightArrow ? 1 : -1)
             return .handled
         }
-        // 上下键移动选中行，同样只在输入框为空、不在编辑时拦截
+        // 选时长预设时，左右键改选哪个预设，不切画布——两者的 guard 互斥，谁都不会抢对方的键
+        .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
+            guard model.isChoosingDuration else { return .ignored }
+            let delta = press.key == .rightArrow ? 1 : -1
+            model.draftMinutesIndex = max(0, min(Self.durationPresets.count - 1, model.draftMinutesIndex + delta))
+            return .handled
+        }
+        // 上下键移动选中行，同样只在输入框为空、不在编辑、没有签到弹出时拦截
         .onKeyPress(keys: [.upArrow, .downArrow]) { press in
-            guard model.animatedIn, model.inputText.isEmpty, model.editingID == nil else { return .ignored }
+            guard model.animatedIn, model.pendingCheckInID == nil,
+                  model.inputText.isEmpty, model.editingID == nil else { return .ignored }
             moveSelection(by: press.key == .downArrow ? 1 : -1)
             return .handled
         }
         // Tab 双向覆盖两种输入：输入框有字时缩进待建的这条；选中已有目标时把它拆成几条。
         // 已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift，不是别的键
         .onKeyPress(keys: [.tab]) { press in
-            guard model.animatedIn, model.editingID == nil else { return .ignored }
+            guard model.animatedIn, model.pendingCheckInID == nil, model.editingID == nil else { return .ignored }
             return handleTab(shift: press.modifiers.contains(.shift)) ? .handled : .ignored
+        }
+        // 签到卡片的四个动作：字母和数字任选一种，签到没弹出时完全不拦截任何键
+        .onKeyPress { press in
+            guard let id = model.pendingCheckInID else { return .ignored }
+            switch press.characters.lowercased() {
+            case "d", "1": resolveCheckIn(id: id, action: .done)
+            case "k", "2": resolveCheckIn(id: id, action: .keepGoing)
+            case "s", "3": resolveCheckIn(id: id, action: .snooze)
+            case "x", "4": resolveCheckIn(id: id, action: .drop)
+            default: return .ignored
+            }
+            return .handled
         }
     }
 
@@ -96,6 +131,57 @@ struct OverlayView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .opacity(showCanvasName ? 1 : 0)
             .allowsHitTesting(false)
+    }
+
+    // MARK: - 强制签到
+
+    enum CheckInAction { case done, keepGoing, snooze, drop }
+
+    /// 到期目标的签到卡片，盖住其余内容。scrim 吞掉点击而不是穿透——
+    /// 这是「强制」的一部分：点卡片外面不能把它关掉，退路只有 Snooze 和菜单栏 Quit
+    private var checkInOverlay: some View {
+        Group {
+            if let id = model.pendingCheckInID, let goal = store.goals.first(where: { $0.id == id }) {
+                ZStack {
+                    Color.black.opacity(0.6)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {}
+                    CheckInView(
+                        goal: goal,
+                        onDone: { resolveCheckIn(id: id, action: .done) },
+                        onKeepGoing: { resolveCheckIn(id: id, action: .keepGoing) },
+                        onSnooze: { resolveCheckIn(id: id, action: .snooze) },
+                        onDrop: { resolveCheckIn(id: id, action: .drop) }
+                    )
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(Motion.reveal, value: model.pendingCheckInID)
+    }
+
+    private func resolveCheckIn(id: UUID, action: CheckInAction) {
+        guard let goal = store.goals.first(where: { $0.id == id }) else {
+            model.pendingCheckInID = nil
+            return
+        }
+        // 先清掉签到态再执行动作：卡片立即开始淡出，且 complete(goal) 不会因为
+        // 「签到还未决」被挡住（它本身没设这个 guard，但顺序对了就不用纠结这件事）
+        model.pendingCheckInID = nil
+        switch action {
+        case .done:
+            complete(goal)
+        case .keepGoing:
+            if let minutes = goal.timer?.minutes {
+                store.setTimer(goalID: id, minutes: minutes)
+            }
+        case .snooze:
+            store.snoozeTimer(goalID: id, minutes: Self.snoozeMinutes)
+        case .drop:
+            store.update(id: id, text: "")
+        }
+        focusedField = .input
     }
 
     /// 目标少时输入栏停在 `Metrics.inputRestingFraction` 那个高度；目标堆到要越过上缘时，
@@ -265,18 +351,24 @@ struct OverlayView: View {
             .animation(Motion.reveal, value: model.animatedIn)
     }
 
-    /// 固定切两段：上面 26pt 是「正在给谁加子目标」的提示位，不管显不显示都占着；
-    /// 下面 inputBarHeight-26 是真正的输入行，在这段里居中——这样输入行的竖直位置
-    /// 永远不变，不会因为提示行的显隐而上下窜动
+    /// 固定切两段：上面 26pt 是「正在给谁加子目标 / 正在选时长」的提示位，不管显不显示
+    /// 都占着；下面 inputBarHeight-26 是真正的输入行，在这段里居中——这样输入行的竖直
+    /// 位置永远不变，不会因为提示行的显隐而上下窜动
     private var inputBar: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(parentContextLabel)
-                .font(.system(size: 17, weight: .medium, design: .rounded))
-                .foregroundStyle(.white.opacity(0.32))
-                .lineLimit(1)
-                .frame(height: 26, alignment: .bottom)
-                .padding(.leading, Metrics.subIndent)
-                .opacity(model.inputParentID != nil ? 1 : 0)
+            Group {
+                if model.isChoosingDuration {
+                    durationPicker
+                } else {
+                    Text(parentContextLabel)
+                        .font(.system(size: 17, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.32))
+                        .lineLimit(1)
+                        .padding(.leading, Metrics.subIndent)
+                        .opacity(model.inputParentID != nil ? 1 : 0)
+                }
+            }
+            .frame(height: 26, alignment: .bottom)
 
             HStack(spacing: Metrics.gutter) {
                 Image(systemName: "plus")
@@ -288,7 +380,7 @@ struct OverlayView: View {
                     .font(.system(size: Metrics.inputFont, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .input)
-                    .onSubmit(createGoal)
+                    .onSubmit(handleInputSubmit)
                     .foregroundStyle(.white)
                     .tint(Palette.accent)
                     // 自己画 placeholder：TextField 内建的那个改不了透明度
@@ -300,6 +392,8 @@ struct OverlayView: View {
                                 .allowsHitTesting(false)
                         }
                     }
+
+                armIndicator
             }
             .padding(.leading, model.inputParentID != nil ? Metrics.subIndent : 0)
             .frame(height: Metrics.inputBarHeight - 26, alignment: .center)
@@ -310,6 +404,7 @@ struct OverlayView: View {
         .opacity(model.animatedIn ? 1 : 0)
         .animation(Motion.reveal, value: model.animatedIn)
         .animation(Motion.commit, value: model.inputParentID)
+        .animation(Motion.commit, value: model.isChoosingDuration)
     }
 
     private var parentContextLabel: String {
@@ -317,15 +412,87 @@ struct OverlayView: View {
         return store.goals.first(where: { $0.id == id })?.text ?? ""
     }
 
+    /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理
+    private var durationPicker: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(Self.durationPresets.enumerated()), id: \.offset) { index, minutes in
+                let active = index == model.draftMinutesIndex
+                Text(minutes.map { "\($0)m" } ?? "Off")
+                    .font(.system(size: 14, weight: .medium, design: .rounded))
+                    .foregroundStyle(active ? .black.opacity(0.85) : .white.opacity(0.4))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(active ? Palette.accent : Color.white.opacity(0.06),
+                                in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            }
+        }
+        .transition(.opacity)
+    }
+
+    /// 输入栏右侧那个「方便的开启按钮」：没武装时是暗淡的表盘图标，武装后亮起并显示分钟数。
+    /// 点它或 ⌘T 都能开合时长选择——⌘T 走 SwiftUI 的 keyboardShortcut，不需要
+    /// 像方向键那样操心是否会被聚焦中的 TextField 抢掉，这是更常规、有文档保证的机制
+    private var armIndicator: some View {
+        Button(action: toggleArming) {
+            HStack(spacing: 5) {
+                Image(systemName: model.armedMinutes == nil ? "timer" : "timer.circle.fill")
+                    .font(.system(size: 17))
+                if let minutes = model.armedMinutes {
+                    Text("\(minutes)m")
+                        .font(.system(size: 15, weight: .medium, design: .rounded))
+                }
+            }
+            .foregroundStyle(model.armedMinutes == nil ? .white.opacity(0.22) : Palette.accent)
+        }
+        .buttonStyle(.plain)
+        .keyboardShortcut("t", modifiers: .command)
+    }
+
     // MARK: - 动作
 
-    private func createGoal() {
+    /// 输入栏唯一的 Return 入口。选时长时第一次 Return 是「确认时长」，
+    /// 不是「建目标」——靠这个分支就避免了去猜 onKeyPress 和 TextField 自带的
+    /// onSubmit 谁先谁后这种没有文档保证的顺序问题，比截 Return 键本身简单得多
+    private func handleInputSubmit() {
+        guard model.pendingCheckInID == nil else { return }
+        if model.isChoosingDuration {
+            let minutes = Self.durationPresets[model.draftMinutesIndex]
+            if let target = model.armingTargetID {
+                store.setTimer(goalID: target, minutes: minutes)
+            } else {
+                model.armedMinutes = minutes
+            }
+            model.isChoosingDuration = false
+            return
+        }
         let text = model.inputText
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        withAnimation(Motion.commit) { store.add(text, parentID: model.inputParentID) }
+        withAnimation(Motion.commit) {
+            store.add(text, parentID: model.inputParentID, minutes: model.armedMinutes)
+        }
         model.inputText = ""
         focusedField = .input
-        // inputParentID 故意不清——连续回车能逐条加子目标，直到 Shift+Tab / Esc 主动退回顶层
+        // inputParentID 故意不清——连续回车能逐条加子目标，直到 Shift+Tab / Esc 主动退回顶层。
+        // armedMinutes 用一次就清——「创建后是否保持武装」是配置项，默认不保持
+        model.armedMinutes = nil
+    }
+
+    /// ⌘T / 点表盘图标：选中了目标（且没在打字）就武装那一条本身；否则武装下一条新建目标
+    private func toggleArming() {
+        guard model.pendingCheckInID == nil else { return }
+        if model.isChoosingDuration {
+            model.isChoosingDuration = false
+            return
+        }
+        if let selected = model.selectedID, model.inputText.isEmpty {
+            model.armingTargetID = selected
+            let current = store.goals.first(where: { $0.id == selected })?.timer?.minutes
+            model.draftMinutesIndex = Self.durationPresets.firstIndex(of: current) ?? 2
+        } else {
+            model.armingTargetID = nil
+            model.draftMinutesIndex = Self.durationPresets.firstIndex(of: model.armedMinutes) ?? 2
+        }
+        model.isChoosingDuration = true
     }
 
     private func beginEdit(_ goal: Goal) {

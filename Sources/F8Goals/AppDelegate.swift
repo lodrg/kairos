@@ -19,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var lastPress = Date.distantPast
     /// 双击判定窗口：双击 F10 呼出；可见时单击 F10 或 Esc 收起
     private let doubleTapInterval: TimeInterval = 0.45
+    private var checkInScanTimer: Timer?
 
     // MARK: - 生命周期
 
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildWindows()
         setupStatusItem()
         installEscapeMonitor()
+        startCheckInScanning()
 
         NotificationCenter.default.addObserver(
             self,
@@ -120,8 +122,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 收起时不播内容动画：窗口整体淡出，等透明了再把 animatedIn 复位。
     /// 内容一边往下缩一边淡出会显得拖沓，而且和窗口淡出是两个时钟。
+    ///
+    /// 签到未决时整个函数直接不做——这是唯一的收起入口（Esc / 单击 F10 / 菜单栏
+    /// 都走这里），挡在这一处比在每个调用点各自判断更不容易漏掉一条路径。
     func hide() {
-        guard isVisible else { return }
+        guard isVisible, model.pendingCheckInID == nil else { return }
         isVisible = false
 
         NSAnimationContext.runAnimationGroup({ context in
@@ -169,6 +174,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handleEscape() {
+        // 签到未决时 Esc 完全不生效——这是「强制」这件事本身要求的，
+        // Snooze 和菜单栏 Quit 仍然可用，不是真的困死用户
+        guard model.pendingCheckInID == nil else { return }
         if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
             model.inputParentID = nil
@@ -179,6 +187,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             hide()
         }
+    }
+
+    // MARK: - 倒计时签到：周期扫描到期目标
+
+    /// 5s 扫一遍，不给每个目标挂 scheduledTimer——那种在系统睡眠时不会触发，
+    /// 醒来后的补偿行为也不可靠。轮询靠的是墙钟比较（now vs firesAt），
+    /// 不管睡了多久，醒来后随便哪一次 tick 都能正确判断「已经过期」。
+    private func startCheckInScanning() {
+        checkInScanTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            // Timer 的 block 类型没有 actor 标注，但这个计时器是从 MainActor 上下文
+            // 挂到主 run loop 的，触发时确实在主线程——和 hide() 里的动画完成回调一样的情况
+            MainActor.assumeIsolated { self?.scanForExpiredTimers() }
+        }
+    }
+
+    private func scanForExpiredTimers() {
+        // 一次只处理一条；处理完的下一次 tick（≤5s）会捡下一条排队的
+        guard model.pendingCheckInID == nil else { return }
+        let now = Date()
+        let overdue = store.goals.filter { !$0.isDone && ($0.timer?.firesAt ?? .distantFuture) <= now }
+        guard let next = overdue.min(by: { ($0.timer?.firesAt ?? .distantFuture) < ($1.timer?.firesAt ?? .distantFuture) })
+        else { return }
+
+        if store.activeCanvasID != next.canvasID {
+            store.activeCanvasID = next.canvasID
+            store.save()
+        }
+        // 到期时如果正在编辑，先落盘，不吞掉没保存的修改
+        if let editing = model.editingID {
+            store.update(id: editing, text: model.editText)
+            model.editingID = nil
+        }
+        model.pendingCheckInID = next.id
+        show()
     }
 
     // MARK: - 菜单栏
