@@ -27,7 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindows()
         setupStatusItem()
-        installEscapeMonitor()
+        installKeyMonitor()
         startCheckInScanning()
 
         NotificationCenter.default.addObserver(
@@ -180,15 +180,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // MARK: - Esc：先退出选中/子目标态 → 取消编辑 → 清空草稿 → 收起
+    // MARK: - 键盘：Esc 分层退出 + ⌘. 开合配置面板
 
-    private func installEscapeMonitor() {
+    /// Esc 和 ⌘. 都在这里拦。⌘. 不能用 SwiftUI 的 onKeyPress——已实测确认带 command 的
+    /// 组合键会被 AppKit 的 key-equivalent 通道消化掉，压根到不了 onKeyPress；
+    /// 而这条 NSEvent 本地监听在这个 App 里给 Esc 用了很久，是验证过能用的路径。
+    /// 状态栏菜单的 keyEquivalent 也不行：菜单不在主菜单栏里时，它的快捷键不参与全局分发。
+    private func installKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            // 只在覆盖层可见时拦 Esc。原来无条件吞掉，导致 App 处于活跃态
-            // （比如菜单栏菜单打开时）Esc 也被吃掉
-            guard let self, self.isVisible, event.keyCode == 53 else { return event }
-            self.handleEscape()
-            return nil
+            guard let self, self.isVisible else { return event }
+            if event.keyCode == 53 { // Esc
+                self.handleEscape()
+                return nil
+            }
+            // ⌘.（keyCode 47 = period）；签到未决时不让它插队
+            if event.keyCode == 47, event.modifierFlags.contains(.command),
+               self.model.pendingCheckInID == nil {
+                self.model.showSettings.toggle()
+                return nil
+            }
+            return event
         }
     }
 
@@ -260,6 +271,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let toggle = NSMenuItem(title: "Show / Hide  (double-tap F10)", action: #selector(toggleFromMenu), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
+
+        // 菜单里也留一条路：⌘. 只在覆盖层可见时管用，而且不是所有人都会去猜有这个快捷键。
+        // 从菜单点进来时如果覆盖层还没开，先呼出再开面板。
+        let settings = NSMenuItem(title: "Settings…  (⌘. while open)", action: #selector(settingsFromMenu), keyEquivalent: "")
+        settings.target = self
+        menu.addItem(settings)
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: "Quit F8Goals", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
@@ -269,5 +287,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleFromMenu() { isVisible ? hide() : show() }
+
+    @objc private func settingsFromMenu() {
+        if !isVisible { show() }
+        model.showSettings = true
+    }
+
     @objc private func quitApp() { NSApp.terminate(nil) }
 }

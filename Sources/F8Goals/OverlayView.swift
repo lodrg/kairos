@@ -99,13 +99,9 @@ struct OverlayView: View {
                 focusedField = .input
             }
         }
-        // ⌘. 呼出配置面板；签到未决时不生效，跟其它按键一样让签到独占键盘
-        .onKeyPress(keys: [KeyEquivalent(".")]) { press in
-            guard model.animatedIn, model.pendingCheckInID == nil,
-                  press.modifiers.contains(.command) else { return .ignored }
-            model.showSettings.toggle()
-            return .handled
-        }
+        // ⌘. 不在这里处理：已实测确认带 command 的组合键会被 AppKit 的 key-equivalent
+        // 通道吃掉，根本不会到 onKeyPress。它跟 Esc 一样放在 AppDelegate 的
+        // NSEvent 本地监听里（那条路在这个 App 里已经验证能用）。
         // 方向键切画布，但只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截——
         // 已验证：即使 onKeyPress 挂在这个远离 TextField 的外层容器上，方向键事件依然会
         // 冒泡到这里；返回 .ignored 时正常交回给 TextField 移动光标，不影响输入

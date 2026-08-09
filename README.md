@@ -18,8 +18,8 @@
 | **Tab** | 见下方「子目标」 |
 | **⌘T** | 展开/收起时长选择，给下一条新目标（或选中的已有目标）挂倒计时 |
 | **D/K/S/X**（签到弹出时） | Done / Keep going / Snooze / Drop，也可用数字 1/2/3/4 |
-| **⌘.** | 呼出/收起配置面板 |
-| 菜单栏图标 | Show / Hide、Quit |
+| **⌘.** | 呼出/收起配置面板（覆盖层已经开着时）；也可以走菜单栏 → Settings… |
+| 菜单栏图标 | Show / Hide、Settings…、Quit |
 
 双击判定窗口 0.45s。数据实时写入
 `~/Library/Application Support/F8Goals/goals.json`（已勾选目标保留在文件里留档）。
@@ -81,6 +81,15 @@ Mac 睡眠时不会触发，醒来后补不回来；轮询靠比较墙钟时间�
 新增 / 改名 / 删除画布，以及色相选择，在配置面板里（⌘. 呼出）。
 
 ## 配置面板（⌘.）
+
+**两条路都能打开**：覆盖层已经开着时按 **⌘.**；或者点菜单栏图标 → **Settings…**（这条在覆盖层
+没开的时候也能用，会先呼出覆盖层再开面板）。⌘. 只在覆盖层可见时生效——应用是 accessory，
+不可见时按键根本到不了它。
+
+⌘. 是在 AppDelegate 的 `NSEvent` 本地监听里拦的，不是 SwiftUI 的 `onKeyPress`——
+后者收不到带 command 的组合键（已实测：命令组合键被 AppKit 的 key-equivalent 通道吃掉，
+`onKeyPress` 一次都不触发）。状态栏菜单的 `keyEquivalent` 也不行：菜单不在主菜单栏里时，
+它的快捷键不参与全局分发。所以键盘走本地监听、鼠标走菜单项，两条路各自独立。
 
 覆盖层内的一块，淡入盖住目标区，不开新窗口；数据单独存到
 `~/Library/Application Support/F8Goals/settings.json`（跟目标数据生命周期不同，改配置不该碰
