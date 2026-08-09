@@ -4,6 +4,7 @@ import SwiftUI
 /// 没有关闭按钮——退路是 Snooze 和菜单栏 Quit，不是「点旁边空白处消失」。
 struct CheckInView: View {
     let goal: Goal
+    let l10n: L10n
     let onDone: () -> Void
     let onKeepGoing: () -> Void
     let onSnooze: () -> Void
@@ -11,7 +12,7 @@ struct CheckInView: View {
 
     var body: some View {
         VStack(spacing: 30) {
-            Text("Time's up")
+            Text(l10n.timeIsUp)
                 .font(.system(size: 22, weight: .medium, design: .rounded))
                 .foregroundStyle(.white.opacity(0.5))
 
@@ -22,16 +23,16 @@ struct CheckInView: View {
                 .lineLimit(3)
 
             if let count = goal.timer?.snoozeCount, count > 0 {
-                Text(count == 1 ? "Snoozed once" : "Snoozed \(count) times")
+                Text(count == 1 ? l10n.snoozedOnce : l10n.snoozedCount(count))
                     .font(.system(size: 16, weight: .regular, design: .rounded))
                     .foregroundStyle(.white.opacity(0.35))
             }
 
             HStack(spacing: 22) {
-                action("Done", key: "D", tint: Palette.done, perform: onDone)
-                action("Keep going", key: "K", tint: Palette.accent, perform: onKeepGoing)
-                action("Snooze", key: "S", tint: .white.opacity(0.6), perform: onSnooze)
-                action("Drop", key: "X", tint: .white.opacity(0.45), perform: onDrop)
+                action(l10n.done, key: "D", tint: Palette.done, perform: onDone)
+                action(l10n.keepGoing, key: "K", tint: Palette.accent, perform: onKeepGoing)
+                action(l10n.snooze, key: "S", tint: .white.opacity(0.6), perform: onSnooze)
+                action(l10n.drop, key: "X", tint: .white.opacity(0.45), perform: onDrop)
             }
             .padding(.top, 10)
         }

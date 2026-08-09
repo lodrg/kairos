@@ -48,6 +48,8 @@ struct OverlayView: View {
         model.pendingCheckInID != nil || model.showSettings
     }
 
+    private var l10n: L10n { L10n(language: settingsStore.settings.language) }
+
     var body: some View {
         ZStack {
             AuroraBackground(
@@ -208,6 +210,7 @@ struct OverlayView: View {
                         .onTapGesture {}
                     CheckInView(
                         goal: goal,
+                        l10n: l10n,
                         onDone: { resolveCheckIn(id: id, action: .done) },
                         onKeepGoing: { resolveCheckIn(id: id, action: .keepGoing) },
                         onSnooze: { resolveCheckIn(id: id, action: .snooze) },
@@ -220,7 +223,7 @@ struct OverlayView: View {
         .animation(Motion.reveal, value: model.pendingCheckInID)
     }
 
-    private func resolveCheckIn(id: UUID, action: CheckInAction) {
+    func resolveCheckIn(id: UUID, action: CheckInAction) {
         guard let goal = store.goals.first(where: { $0.id == id }) else {
             model.pendingCheckInID = nil
             return
@@ -403,7 +406,7 @@ struct OverlayView: View {
     }
 
     private var emptyHint: some View {
-        Text("No goals yet")
+        Text(l10n.noGoalsYet)
             .font(.system(size: 26, weight: .regular, design: .rounded))
             .foregroundStyle(.white.opacity(0.16))
             .frame(maxWidth: .infinity, alignment: .center)
@@ -448,7 +451,7 @@ struct OverlayView: View {
                     // 自己画 placeholder：TextField 内建的那个改不了透明度
                     .overlay(alignment: .leading) {
                         if model.inputText.isEmpty {
-                            Text("New goal")
+                            Text(l10n.newGoalPlaceholder)
                                 .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.15))
                                 .allowsHitTesting(false)
@@ -479,7 +482,7 @@ struct OverlayView: View {
         HStack(spacing: 8) {
             ForEach(Array(durationOptions.enumerated()), id: \.offset) { index, minutes in
                 let active = index == model.draftMinutesIndex
-                Text(minutes.map { "\($0)m" } ?? "Off")
+                Text(minutes.map { "\($0)m" } ?? l10n.durationOff)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(active ? .black.opacity(0.85) : .white.opacity(0.4))
                     .padding(.horizontal, 9)

@@ -20,6 +20,28 @@ struct Settings: Codable, Equatable {
     // 布局；默认值必须精确匹配 Metrics 里原来硬编码的常量，见 LayoutMetrics 的注释
     var inputRestingFraction = 0.58
     var textScale = 1.0
+
+    // 语言；默认英文，保持现有界面不变
+    var language: AppLanguage = .en
+
+    init() {}
+
+    /// 旧版 settings.json 里没有 language 字段——直接走合成解码会整个 decode 失败，
+    /// 用户已有的全部配置会被静默重置成默认值。所有字段都用 decodeIfPresent 兜底。
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        durationPresetsMinutes = try c.decodeIfPresent([Int].self, forKey: .durationPresetsMinutes) ?? [5, 15, 25, 45]
+        defaultMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultMinutes) ?? 25
+        snoozeMinutes = try c.decodeIfPresent(Int.self, forKey: .snoozeMinutes) ?? 5
+        autoArmNewGoals = try c.decodeIfPresent(Bool.self, forKey: .autoArmNewGoals) ?? false
+        keepArmedAfterCreate = try c.decodeIfPresent(Bool.self, forKey: .keepArmedAfterCreate) ?? false
+        checkInEscDismisses = try c.decodeIfPresent(Bool.self, forKey: .checkInEscDismisses) ?? false
+        breathingEnabled = try c.decodeIfPresent(Bool.self, forKey: .breathingEnabled) ?? true
+        auroraEnabled = try c.decodeIfPresent(Bool.self, forKey: .auroraEnabled) ?? true
+        inputRestingFraction = try c.decodeIfPresent(Double.self, forKey: .inputRestingFraction) ?? 0.58
+        textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? 1.0
+        language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .en
+    }
 }
 
 @MainActor

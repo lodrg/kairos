@@ -13,6 +13,8 @@ struct SettingsPanel: View {
 
     private enum Field: Hashable { case presets, newCanvas }
 
+    private var l10n: L10n { L10n(language: settingsStore.settings.language) }
+
     var body: some View {
         ZStack {
             // 目标区已经在 OverlayView 里整块淡掉了，这层只负责压暗极光让面板文字有对比度
@@ -25,7 +27,7 @@ struct SettingsPanel: View {
             // 内容又是顶对齐的，于是面板整体偏上、下面吊着一大块空白，看着就不像个居中的对话框。
             // 唯一可能无限长的是画布列表，所以只在那一段内部加滚动（见 canvasSection）。
             VStack(alignment: .leading, spacing: 30) {
-                Text("Settings")
+                Text(l10n.settingsTitle)
                     .font(.system(size: 26, weight: .medium, design: .rounded))
                     .foregroundStyle(.white.opacity(0.92))
 
@@ -33,8 +35,9 @@ struct SettingsPanel: View {
                 canvasSection
                 appearanceSection
                 layoutSection
+                languageSection
 
-                Text("Esc to close")
+                Text(l10n.escToClose)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
                     .foregroundStyle(.white.opacity(0.28))
             }
@@ -59,12 +62,12 @@ struct SettingsPanel: View {
 
     private var countdownSection: some View {
         VStack(alignment: .leading, spacing: 18) {
-            Text("COUNTDOWN CHECK-IN")
+            Text(l10n.countdownCheckIn)
                 .font(.system(size: 14, weight: .bold, design: .rounded))
                 .foregroundStyle(Palette.accent.opacity(0.9))
                 .tracking(1.4)
 
-            settingsRow("Presets (minutes)") {
+            settingsRow(l10n.presetsMinutes) {
                 TextField("5 15 25 45", text: $presetsText)
                     .font(.system(size: 16, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
@@ -77,18 +80,18 @@ struct SettingsPanel: View {
             }
 
             SettingsStepper(
-                label: "Default duration",
+                label: l10n.defaultDuration,
                 value: $settingsStore.settings.defaultMinutes,
                 range: 1...180, step: 5, unit: "m"
             )
             SettingsStepper(
-                label: "Snooze duration",
+                label: l10n.snoozeDuration,
                 value: $settingsStore.settings.snoozeMinutes,
                 range: 1...60, step: 1, unit: "m"
             )
-            SettingsToggle(label: "Auto-arm new goals", isOn: $settingsStore.settings.autoArmNewGoals)
-            SettingsToggle(label: "Keep armed after creating", isOn: $settingsStore.settings.keepArmedAfterCreate)
-            SettingsToggle(label: "Esc / F10 dismiss check-in", isOn: $settingsStore.settings.checkInEscDismisses)
+            SettingsToggle(label: l10n.autoArmNewGoals, isOn: $settingsStore.settings.autoArmNewGoals)
+            SettingsToggle(label: l10n.keepArmedAfterCreate, isOn: $settingsStore.settings.keepArmedAfterCreate)
+            SettingsToggle(label: l10n.escDismissCheckIn, isOn: $settingsStore.settings.checkInEscDismisses)
         }
     }
 
@@ -108,7 +111,7 @@ struct SettingsPanel: View {
 
     private var canvasSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("CANVASES")
+            sectionHeader(l10n.canvases)
 
             // 画布数量是用户可以一直加的，是这个面板里唯一可能顶破屏幕的一段。
             // 只有真的多到装不下才套 ScrollView 并给一个确定高度——
@@ -137,7 +140,7 @@ struct SettingsPanel: View {
                     // 只剩一个 + 号的话根本不知道这行能打字
                     .overlay(alignment: .leading) {
                         if newCanvasName.isEmpty {
-                            Text("Add canvas")
+                            Text(l10n.addCanvas)
                                 .font(.system(size: 16, weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.3))
                                 .allowsHitTesting(false)
@@ -166,9 +169,9 @@ struct SettingsPanel: View {
 
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("APPEARANCE")
-            SettingsToggle(label: "Breathing background", isOn: $settingsStore.settings.breathingEnabled)
-            SettingsToggle(label: "Aurora background", isOn: $settingsStore.settings.auroraEnabled)
+            sectionHeader(l10n.appearance)
+            SettingsToggle(label: l10n.breathingBackground, isOn: $settingsStore.settings.breathingEnabled)
+            SettingsToggle(label: l10n.auroraBackground, isOn: $settingsStore.settings.auroraEnabled)
         }
     }
 
@@ -178,17 +181,34 @@ struct SettingsPanel: View {
     /// 而这里没法截图看出来提前拦住，见 LayoutMetrics 的注释
     private var layoutSection: some View {
         VStack(alignment: .leading, spacing: 14) {
-            sectionHeader("LAYOUT")
+            sectionHeader(l10n.layout)
             SettingsPercentStepper(
-                label: "Input bar position",
+                label: l10n.inputBarPosition,
                 value: $settingsStore.settings.inputRestingFraction,
                 range: 0.35...0.75, step: 0.02
             )
             SettingsPercentStepper(
-                label: "Text size",
+                label: l10n.textSize,
                 value: $settingsStore.settings.textScale,
                 range: 0.75...1.35, step: 0.05
             )
+        }
+    }
+
+    // MARK: - 语言
+
+    /// 语言切换：分段控件，改完立刻全局生效（所有视图都观察 SettingsStore）
+    private var languageSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader(l10n.languageTitle)
+            Picker("", selection: $settingsStore.settings.language) {
+                ForEach(AppLanguage.allCases) { lang in
+                    Text(lang.displayName).tag(lang)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(maxWidth: 260)
         }
     }
 

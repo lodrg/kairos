@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// 无边框、可成为 Key 的全屏覆盖窗口
@@ -21,6 +22,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 双击判定窗口：双击 F10 呼出；可见时单击 F10 或 Esc 收起
     private let doubleTapInterval: TimeInterval = 0.45
     private var checkInScanTimer: Timer?
+    /// 语言切换后重建菜单栏菜单（NSMenu 是 AppKit 的，不随 SwiftUI 自动重绘）
+    private var languageCancellable: AnyCancellable?
+    /// 第一个覆盖窗口的根视图：签到的键盘动作统一走这里执行，
+    /// 完成/延后/放弃的动画逻辑只有 OverlayView 里那一份实现，不在这里复制
+    private var overlayView: OverlayView?
 
     // MARK: - 生命周期
 
@@ -41,6 +47,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.handleHotkey()
         }
         HotkeyManager.shared.register()
+
+        // 语言切换后菜单栏菜单（AppKit 的）不会自动重绘，这里订阅重建
+        languageCancellable = settingsStore.$settings
+            .map(\.language)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.rebuildMenu() }
+            }
 
         // 调试入口：F8Goals --show / --hide / --show-settings / --show-arming
         // 后两个是给「只能用键盘到达的状态」留的口子：远程或没有辅助功能权限时，
@@ -85,7 +99,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
             window.alphaValue = 0
-            window.contentView = NSHostingView(rootView: OverlayView(store: store, model: model, settingsStore: settingsStore))
+            let content = OverlayView(store: store, model: model, settingsStore: settingsStore)
+            if overlayView == nil { overlayView = content }
+            window.contentView = NSHostingView(rootView: content)
             windows.append(window)
         }
     }
@@ -189,6 +205,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isVisible else { return event }
+            // 签到卡片的快捷键 D/K/S/X 或 1/2/3/4。
+            // 必须放本地监听而不是 SwiftUI onKeyPress：签到弹出时 focusedField 被清成 nil，
+            // 焦点链里没有任何聚焦元素，挂在外层容器上的 onKeyPress 收不到任何按键。
+            // 本地监听不依赖焦点链，跟下面的 Esc / ⌘. 是同一条已验证的路径。
+            if self.handleCheckInKey(event) { return nil }
+
             if event.keyCode == 53 { // Esc
                 self.handleEscape()
                 return nil
@@ -201,6 +223,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return event
         }
+    }
+
+    /// 签到卡片的四个动作；命中返回 true（键已被消费）。字母或数字任选一种
+    private func handleCheckInKey(_ event: NSEvent) -> Bool {
+        guard model.pendingCheckInID != nil,
+              let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }
+        let action: OverlayView.CheckInAction
+        switch chars {
+        case "d", "1": action = .done
+        case "k", "2": action = .keepGoing
+        case "s", "3": action = .snooze
+        case "x", "4": action = .drop
+        default: return false
+        }
+        if let id = model.pendingCheckInID {
+            overlayView?.resolveCheckIn(id: id, action: action)
+        }
+        return true
     }
 
     private func handleEscape() {
@@ -267,23 +307,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let button = item.button {
             button.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "F8Goals")
         }
+        statusItem = item
+        rebuildMenu()
+    }
+
+    /// 菜单文案跟语言走：语言切换时整份重建（item.menu 直接换新）
+    private func rebuildMenu() {
+        guard let item = statusItem else { return }
+        let l10n = L10n(language: settingsStore.settings.language)
         let menu = NSMenu()
-        let toggle = NSMenuItem(title: "Show / Hide  (double-tap F10)", action: #selector(toggleFromMenu), keyEquivalent: "")
+
+        let toggle = NSMenuItem(title: l10n.menuToggle, action: #selector(toggleFromMenu), keyEquivalent: "")
         toggle.target = self
         menu.addItem(toggle)
 
         // 菜单里也留一条路：⌘. 只在覆盖层可见时管用，而且不是所有人都会去猜有这个快捷键。
         // 从菜单点进来时如果覆盖层还没开，先呼出再开面板。
-        let settings = NSMenuItem(title: "Settings…  (⌘. while open)", action: #selector(settingsFromMenu), keyEquivalent: "")
+        let settings = NSMenuItem(title: l10n.menuSettings, action: #selector(settingsFromMenu), keyEquivalent: "")
         settings.target = self
         menu.addItem(settings)
 
         menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit F8Goals", action: #selector(quitApp), keyEquivalent: "q")
+        let quit = NSMenuItem(title: l10n.menuQuit, action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
         item.menu = menu
-        statusItem = item
     }
 
     @objc private func toggleFromMenu() { isVisible ? hide() : show() }

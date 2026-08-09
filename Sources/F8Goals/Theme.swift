@@ -38,17 +38,19 @@ enum Motion {
 // MARK: - 配色
 
 enum Palette {
-    /// 极光背景的控制点基色（左上 → 右下）
+    /// 极光背景的控制点基色（左上 → 右下）。
+    /// 之前这组颜色全部落在 RGB 0.02-0.31 的极暗区间，网格点怎么漂都看不出色差——
+    /// 用户直接反馈"看不出动画"。现在提亮到能明显看到色块流动，但保持深底让白字可读。
     static let aurora: [Color] = [
-        Color(red: 0.024, green: 0.035, blue: 0.094),
-        Color(red: 0.086, green: 0.067, blue: 0.243),
-        Color(red: 0.043, green: 0.106, blue: 0.259),
-        Color(red: 0.145, green: 0.055, blue: 0.227),
-        Color(red: 0.196, green: 0.086, blue: 0.310),
-        Color(red: 0.031, green: 0.078, blue: 0.196),
-        Color(red: 0.016, green: 0.027, blue: 0.078),
-        Color(red: 0.063, green: 0.043, blue: 0.169),
-        Color(red: 0.020, green: 0.051, blue: 0.141)
+        Color(red: 0.050, green: 0.085, blue: 0.210),
+        Color(red: 0.240, green: 0.150, blue: 0.480),
+        Color(red: 0.100, green: 0.300, blue: 0.460),
+        Color(red: 0.420, green: 0.150, blue: 0.460),
+        Color(red: 0.480, green: 0.240, blue: 0.580),
+        Color(red: 0.090, green: 0.240, blue: 0.420),
+        Color(red: 0.040, green: 0.075, blue: 0.180),
+        Color(red: 0.220, green: 0.140, blue: 0.400),
+        Color(red: 0.070, green: 0.180, blue: 0.340)
     ]
 
     static let accent = Color(red: 0.51, green: 0.68, blue: 1.0)
