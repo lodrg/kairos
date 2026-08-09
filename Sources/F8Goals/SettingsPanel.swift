@@ -21,25 +21,33 @@ struct SettingsPanel: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onClose)
 
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 36) {
-                    Text("Settings")
-                        .font(.system(size: 28, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.92))
+            // 用自然高度的 VStack 而不是固定高的 ScrollView：ScrollView 会吃满给它的高度，
+            // 内容又是顶对齐的，于是面板整体偏上、下面吊着一大块空白，看着就不像个居中的对话框。
+            // 唯一可能无限长的是画布列表，所以只在那一段内部加滚动（见 canvasSection）。
+            VStack(alignment: .leading, spacing: 30) {
+                Text("Settings")
+                    .font(.system(size: 26, weight: .medium, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.92))
 
-                    countdownSection
-                    canvasSection
-                    appearanceSection
-                    layoutSection
+                countdownSection
+                canvasSection
+                appearanceSection
+                layoutSection
 
-                    Text("Esc to close")
-                        .font(.system(size: 13, weight: .regular, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.22))
-                }
-                .padding(48)
+                Text("Esc to close")
+                    .font(.system(size: 13, weight: .regular, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.28))
             }
-            .frame(maxWidth: 620, maxHeight: 780)
-            .background(Color.black.opacity(0.001)) // 让整块面板本身也吃点击，不穿透到 scrim
+            .padding(38)
+            .frame(width: 520, alignment: .leading)
+            // 配置面板需要读起来是一块独立的表面：14 个控件浮在背景上没有任何边界，
+            // 就是一堆散落的文字而不是一个设置界面。这跟输入栏「不要明显框体」不冲突——
+            // 那说的是主界面里的输入提示，不是一个表单容器。
+            .background {
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(Color.black.opacity(0.55))
+                    .stroke(.white.opacity(0.09), lineWidth: 1)
+            }
             .onTapGesture {}
         }
         .onAppear {
@@ -102,14 +110,21 @@ struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader("CANVASES")
 
-            ForEach(store.canvases) { canvas in
-                CanvasRow(canvas: canvas, canDelete: store.canvases.count > 1, store: store)
+            // 画布数量是用户可以一直加的，是这个面板里唯一可能顶破屏幕的一段。
+            // 只有真的多到装不下才套 ScrollView 并给一个确定高度——
+            // ScrollView 配 maxHeight: nil 不是「按内容收缩」而是「不受约束」，它会贪心地
+            // 吃满可用高度，把整个面板撑到满屏，这正是外层要避免的那个毛病。
+            if store.canvases.count > 5 {
+                ScrollView(showsIndicators: false) { canvasRows }
+                    .frame(height: 150)
+            } else {
+                canvasRows
             }
 
             HStack(spacing: 14) {
                 Image(systemName: "plus")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.white.opacity(0.3))
+                    .foregroundStyle(.white.opacity(0.35))
                     .frame(width: 16)
                 TextField("", text: $newCanvasName)
                     .font(.system(size: 16, weight: .medium, design: .rounded))
@@ -128,6 +143,14 @@ struct SettingsPanel: View {
                                 .allowsHitTesting(false)
                         }
                     }
+            }
+        }
+    }
+
+    private var canvasRows: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(store.canvases) { canvas in
+                CanvasRow(canvas: canvas, canDelete: store.canvases.count > 1, store: store)
             }
         }
     }
@@ -174,7 +197,7 @@ struct SettingsPanel: View {
     private func sectionHeader(_ title: String) -> some View {
         Text(title)
             .font(.system(size: 14, weight: .bold, design: .rounded))
-            .foregroundStyle(.white.opacity(0.35))
+            .foregroundStyle(.white.opacity(0.45))
             .tracking(1.4)
     }
 
@@ -250,7 +273,7 @@ struct SettingsToggle: View {
                     .foregroundStyle(.white.opacity(0.75))
                 Spacer()
                 RoundedRectangle(cornerRadius: 11, style: .continuous)
-                    .fill(isOn ? Palette.accent : Color.white.opacity(0.08))
+                    .fill(isOn ? Palette.accent : Color.white.opacity(0.14))
                     .frame(width: 38, height: 22)
                     .overlay(alignment: isOn ? .trailing : .leading) {
                         Circle()
