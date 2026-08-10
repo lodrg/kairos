@@ -224,6 +224,10 @@ struct SettingsPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader(l10n.appearance)
             SettingsToggle(label: l10n.animatedBackground, isOn: $settingsStore.settings.animatedBackground)
+            SettingsToggle(label: l10n.transparentMode, isOn: $settingsStore.settings.transparentMode)
+            Text(l10n.transparentModeHint)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.35))
         }
     }
 

@@ -36,6 +36,11 @@ struct Settings: Codable, Equatable {
     // 首启引导：看过一次就再不弹（隐身优先——任何常驻提示都会暴露这是个热键 App）
     var onboardingSeen = false
 
+    // 透明模式（AI 协作）：覆盖层保持占屏可见，但对其他进程的截图/点击/键盘全部
+    // 透明——sharingType=.none 让 AI 的截图/录屏里没有它（物理屏照常显示），
+    // ignoresMouseEvents 让点击穿透到下面的 App；签到也不自动弹出（防打断 AI）
+    var transparentMode = false
+
     init() {}
 
     /// 显式声明键名：auroraEnabled 是旧版「极光背景」开关，结构体里已没有对应属性，
@@ -45,7 +50,7 @@ struct Settings: Codable, Equatable {
              checkInEscDismisses, inputRestingFraction, textScale, language,
              animatedBackground, auroraEnabled,
              showHotkeyKeyCode, showHotkeyModifiers, hideHotkeyKeyCode, hideHotkeyModifiers,
-             onboardingSeen
+             onboardingSeen, transparentMode
     }
 
     /// 旧版 settings.json 里没有 language 字段——直接走合成解码会整个 decode 失败，
@@ -67,6 +72,7 @@ struct Settings: Codable, Equatable {
         hideHotkeyKeyCode = try c.decodeIfPresent(Int.self, forKey: .hideHotkeyKeyCode) ?? 109
         hideHotkeyModifiers = try c.decodeIfPresent(Int.self, forKey: .hideHotkeyModifiers) ?? 0
         onboardingSeen = try c.decodeIfPresent(Bool.self, forKey: .onboardingSeen) ?? false
+        transparentMode = try c.decodeIfPresent(Bool.self, forKey: .transparentMode) ?? false
     }
 
     /// 手写 encode：CodingKeys 里保留了旧键 auroraEnabled（只为迁移解码用），
@@ -87,6 +93,7 @@ struct Settings: Codable, Equatable {
         try c.encode(hideHotkeyKeyCode, forKey: .hideHotkeyKeyCode)
         try c.encode(hideHotkeyModifiers, forKey: .hideHotkeyModifiers)
         try c.encode(onboardingSeen, forKey: .onboardingSeen)
+        try c.encode(transparentMode, forKey: .transparentMode)
     }
 }
 

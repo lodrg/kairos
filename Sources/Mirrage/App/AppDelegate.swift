@@ -26,6 +26,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var languageCancellable: AnyCancellable?
     /// 热键改动后重注册 Carbon 热键
     private var hotkeyCancellable: AnyCancellable?
+    /// 透明模式改动后刷新窗口属性
+    private var transparentCancellable: AnyCancellable?
     /// 第一个覆盖窗口的根视图：签到的键盘动作统一走这里执行，
     /// 完成/延后/放弃的动画逻辑只有 OverlayView 里那一份实现，不在这里复制
     private var overlayView: OverlayView?
@@ -65,6 +67,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .sink { [weak self] _ in
                 MainActor.assumeIsolated { self?.hotkeyManagerRegister() }
             }
+
+        // 透明模式即时生效（截图/点击穿透是窗口属性，改了马上刷到所有窗口）
+        transparentCancellable = settingsStore.$settings
+            .map(\.transparentMode)
+            .removeDuplicates()
+            .dropFirst() // 启动时的初始值由 buildWindows 后的 applyTransparentMode 处理
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.applyTransparentMode() }
+            }
+        applyTransparentMode()
 
         // 调试入口：Mirrage --show / --hide / --show-settings / --show-arming
         // 后两个是给「只能用键盘到达的状态」留的口子：远程或没有辅助功能权限时，
@@ -147,6 +159,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         windows.removeAll()
         buildWindows()
+        applyTransparentMode() // 新窗口要重新落透明模式的窗口属性
         if wasVisible {
             isVisible = false
             show()
@@ -421,8 +434,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func scanForExpiredTimers() {
         // 一次只处理一条；处理完的下一次 tick（≤5s）会捡下一条排队的。
-        // 全屏重选时长开着时也不弹新卡——用户正对着那个界面，别叠卡
-        guard model.pendingCheckInID == nil, model.retimingGoalID == nil else { return }
+        // 全屏重选时长开着时也不弹新卡——用户正对着那个界面，别叠卡。
+        // 透明模式下完全不弹——AI 正在操作电脑，签到卡会打断它的截图
+        guard model.pendingCheckInID == nil, model.retimingGoalID == nil,
+              !settingsStore.settings.transparentMode else { return }
         let now = Date()
         let overdue = store.goals.filter { !$0.isDone && ($0.timer?.firesAt ?? .distantFuture) <= now }
         guard let next = overdue.min(by: { ($0.timer?.firesAt ?? .distantFuture) < ($1.timer?.firesAt ?? .distantFuture) })
@@ -468,6 +483,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings.target = self
         menu.addItem(settings)
 
+        // 透明模式：AI 协作开关（勾选状态实时反映）
+        let transparent = NSMenuItem(title: l10n.transparentMode, action: #selector(toggleTransparentMode), keyEquivalent: "")
+        transparent.target = self
+        transparent.state = settingsStore.settings.transparentMode ? .on : .off
+        menu.addItem(transparent)
+
         menu.addItem(.separator())
         let quit = NSMenuItem(title: l10n.menuQuit, action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
@@ -476,6 +497,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleFromMenu() { isVisible ? hide() : show() }
+
+    /// 透明模式：开着时覆盖层对 AI 完全隐形（截图看不见、点击穿透、不弹签到），
+    /// 物理屏上人照常看得见。菜单栏和设置面板共用这一个入口
+    @objc private func toggleTransparentMode() {
+        settingsStore.settings.transparentMode.toggle()
+        applyTransparentMode()
+    }
+
+    /// 透明模式落地到窗口：sharingType=.none（其他进程的截图/录屏里没有覆盖层，
+    /// 物理屏照常显示——密码框同款隐私机制）+ ignoresMouseEvents（点击穿透）。
+    /// 开启时清掉待处理的签到——否则卡片还在、下一次扫描还会把它弹回来
+    private func applyTransparentMode() {
+        let on = settingsStore.settings.transparentMode
+        for window in windows {
+            window.sharingType = on ? .none : .readOnly
+            window.ignoresMouseEvents = on
+        }
+        if on { model.pendingCheckInID = nil }
+    }
 
     @objc private func settingsFromMenu() {
         if !isVisible { show() }
