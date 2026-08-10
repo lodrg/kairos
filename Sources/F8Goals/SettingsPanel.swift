@@ -72,7 +72,7 @@ struct SettingsPanel: View {
                 .tracking(1.4)
 
             settingsRow(l10n.presetsMinutes) {
-                TextField("5 15 25 45", text: $presetsText)
+                TextField("3 5 15 30 60", text: $presetsText)
                     .font(.system(size: 16, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
                     .foregroundStyle(.white)
@@ -83,9 +83,13 @@ struct SettingsPanel: View {
                     .onSubmit(commitPresets)
             }
 
-            settingsRow(l10n.defaultDuration) {
+            // 默认时长：标签在上，常用预设点选 + 自定义输入在下——五个预设加一个输入框
+            // 横排会挤，上下排开更透气；分隔线把「预设」和「自定义」两种方式分开
+            VStack(alignment: .leading, spacing: 8) {
+                Text(l10n.defaultDuration)
+                    .font(.system(size: 17, weight: .regular, design: .rounded))
+                    .foregroundStyle(.white.opacity(0.75))
                 HStack(spacing: 8) {
-                    // 常用预设：点一下就设为默认（⌘+Enter 用它）
                     ForEach(settingsStore.settings.durationPresetsMinutes, id: \.self) { minutes in
                         let active = settingsStore.settings.defaultMinutes == minutes
                         Button {
@@ -101,8 +105,12 @@ struct SettingsPanel: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    Rectangle()
+                        .fill(.white.opacity(0.12))
+                        .frame(width: 1, height: 20)
+                        .padding(.horizontal, 4)
                     // 自定义输入：直接敲数字回车，1–180 分钟
-                    TextField("", text: $defaultMinutesText)
+                    TextField(l10n.defaultMinutesPlaceholder, text: $defaultMinutesText)
                         .font(.system(size: 16, weight: .medium, design: .rounded))
                         .textFieldStyle(.plain)
                         .foregroundStyle(.white)

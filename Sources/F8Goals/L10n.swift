@@ -49,6 +49,8 @@ struct L10n {
     var countdownCheckIn: String { zh ? "倒计时签到" : "COUNTDOWN CHECK-IN" }
     var presetsMinutes: String { zh ? "预设时长（分钟）" : "Presets (minutes)" }
     var defaultDuration: String { zh ? "默认时长" : "Default duration" }
+    /// 默认时长自定义输入框的占位提示
+    var defaultMinutesPlaceholder: String { zh ? "自定义" : "Custom" }
     /// 时长选择里「默认时长」角标的悬停提示
     var durationDefaultHint: String { zh ? "默认时长 —— ⌘+Enter 新建目标时直接用它武装" : "Default duration — ⌘+Enter arms new goals with it" }
     var autoArmNewGoals: String { zh ? "新目标自动武装" : "Auto-arm new goals" }

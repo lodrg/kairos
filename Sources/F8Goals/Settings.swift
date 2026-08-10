@@ -4,8 +4,8 @@ import Foundation
 /// 所以单独存到 settings.json，单独一个 store。
 struct Settings: Codable, Equatable {
     // 倒计时签到
-    var durationPresetsMinutes: [Int] = [5, 15, 25, 45]
-    var defaultMinutes = 25
+    var durationPresetsMinutes: [Int] = [3, 5, 15, 30, 60]
+    var defaultMinutes = 15
     var autoArmNewGoals = false
     var keepArmedAfterCreate = false
     /// 打开后，单击 F10 能在签到未决时正常收起（相当于「关闭签到」，不等于任何动作）。
@@ -29,8 +29,8 @@ struct Settings: Codable, Equatable {
     /// 用户已有的全部配置会被静默重置成默认值。所有字段都用 decodeIfPresent 兜底。
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
-        durationPresetsMinutes = try c.decodeIfPresent([Int].self, forKey: .durationPresetsMinutes) ?? [5, 15, 25, 45]
-        defaultMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultMinutes) ?? 25
+        durationPresetsMinutes = try c.decodeIfPresent([Int].self, forKey: .durationPresetsMinutes) ?? [3, 5, 15, 30, 60]
+        defaultMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultMinutes) ?? 15
         autoArmNewGoals = try c.decodeIfPresent(Bool.self, forKey: .autoArmNewGoals) ?? false
         keepArmedAfterCreate = try c.decodeIfPresent(Bool.self, forKey: .keepArmedAfterCreate) ?? false
         checkInEscDismisses = try c.decodeIfPresent(Bool.self, forKey: .checkInEscDismisses) ?? false
