@@ -79,10 +79,6 @@ struct OverlayView: View {
         .onChange(of: model.animatedIn) { _, isIn in
             if isIn {
                 focusedField = .input
-                // 自动武装：呼出时如果配置了「新目标自动武装」且当前没有别的武装状态，直接挂上默认时长
-                if settingsStore.settings.autoArmNewGoals, model.armedMinutes == nil {
-                    model.armedMinutes = settingsStore.settings.defaultMinutes
-                }
             }
         }
         .onChange(of: model.editingID) { _, editing in
@@ -104,13 +100,6 @@ struct OverlayView: View {
                 focusedField = nil
             } else if model.animatedIn {
                 focusedField = .input
-            }
-        }
-        // 自动武装开关一打开，输入栏的武装指示立刻亮起（不用等下次呼出）——
-        // 用户刚开开关就打字，心里有数这条是带倒计时的
-        .onChange(of: settingsStore.settings.autoArmNewGoals) { _, on in
-            if on, model.armedMinutes == nil {
-                model.armedMinutes = settingsStore.settings.defaultMinutes
             }
         }
         // ⌘. 不在这里处理：已实测确认带 command 的组合键会被 AppKit 的 key-equivalent
@@ -653,20 +642,29 @@ struct OverlayView: View {
         .transition(.opacity)
     }
 
+    /// 下一条新目标的**实际**武装时长：⌘T 手动选的（armedMinutes）优先；
+    /// 没手动选且开了自动武装 = 跟随「默认时长」的当前值——
+    /// 改默认时长，指示和武装立即跟着变，不缓存旧值
+    private var effectiveArmedMinutes: Int? {
+        if let m = model.armedMinutes { return m }
+        if settingsStore.settings.autoArmNewGoals { return settingsStore.settings.defaultMinutes }
+        return nil
+    }
+
     /// 输入栏右侧那个「方便的开启按钮」：没武装时是暗淡的表盘图标，武装后亮起并显示分钟数。
     /// 点它或 ⌘T 都能开合时长选择——⌘T 走 SwiftUI 的 keyboardShortcut，不需要
     /// 像方向键那样操心是否会被聚焦中的 TextField 抢掉，这是更常规、有文档保证的机制
     private var armIndicator: some View {
         Button(action: toggleArming) {
             HStack(spacing: 5) {
-                Image(systemName: model.armedMinutes == nil ? "timer" : "timer.circle.fill")
+                Image(systemName: effectiveArmedMinutes == nil ? "timer" : "timer.circle.fill")
                     .font(.system(size: 17))
-                if let minutes = model.armedMinutes {
+                if let minutes = effectiveArmedMinutes {
                     Text("\(minutes)m")
                         .font(.system(size: 15, weight: .medium, design: .rounded))
                 }
             }
-            .foregroundStyle(model.armedMinutes == nil ? .white.opacity(0.22) : Palette.accent)
+            .foregroundStyle(effectiveArmedMinutes == nil ? .white.opacity(0.22) : Palette.accent)
         }
         .buttonStyle(.plain)
         // 不进 Tab 焦点循环：这个按钮被 Tab 选到会误触计时器，而且焦点一离开输入框就打不了字
@@ -703,12 +701,7 @@ struct OverlayView: View {
             return
         }
         withAnimation(Motion.commit) {
-            // 自动武装兜底：设置里刚打开开关时（覆盖层没重新呼出过）armedMinutes 还是
-            // nil——创建时再补一次判断，保证「打开即生效」而不是要等下次呼出
-            if model.armedMinutes == nil, settingsStore.settings.autoArmNewGoals {
-                model.armedMinutes = settingsStore.settings.defaultMinutes
-            }
-            store.add(text, parentID: model.inputParentID, minutes: model.armedMinutes)
+            store.add(text, parentID: model.inputParentID, minutes: effectiveArmedMinutes)
         }
         model.inputText = ""
         focusedField = .input
@@ -754,7 +747,7 @@ struct OverlayView: View {
                 ?? durationOptions.firstIndex(of: settingsStore.settings.defaultMinutes) ?? 0
         } else {
             model.armingTargetID = nil
-            model.draftMinutesIndex = durationOptions.firstIndex(of: model.armedMinutes)
+            model.draftMinutesIndex = durationOptions.firstIndex(of: effectiveArmedMinutes)
                 ?? durationOptions.firstIndex(of: settingsStore.settings.defaultMinutes) ?? 0
         }
         model.isChoosingDuration = true
