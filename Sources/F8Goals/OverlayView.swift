@@ -68,6 +68,8 @@ struct OverlayView: View {
                 .animation(Motion.reveal, value: isModalUp)
             canvasNameFlash
                 .opacity(isModalUp ? 0 : 1)
+            breadcrumb
+                .opacity(isModalUp ? 0 : 1)
             settingsOverlay
             historyOverlay
             checkInOverlay
@@ -105,14 +107,23 @@ struct OverlayView: View {
         // ⌘. 不在这里处理：已实测确认带 command 的组合键会被 AppKit 的 key-equivalent
         // 通道吃掉，根本不会到 onKeyPress。它跟 Esc 一样放在 AppDelegate 的
         // NSEvent 本地监听里（那条路在这个 App 里已经验证能用）。
-        // 方向键切画布，但只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截——
-        // 已验证：即使 onKeyPress 挂在这个远离 TextField 的外层容器上，方向键事件依然会
-        // 冒泡到这里；返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
+        // 方向键左右 = 下钻/返回：→ 进入选中行（有子目标时），← 退回上一层。
+        // 只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截——方向键语义
+        // 会让位给这些更具体的状态；返回 .ignored 时正常交回给 TextField 移动光标。
+        // 切画布移到 ⌘←/⌘→（AppDelegate 本地监听）——左右键同时做两件事会互相打架
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
             guard model.animatedIn, model.pendingCheckInID == nil, !model.isChoosingDuration,
-                  model.inputText.isEmpty, model.editingID == nil,
-                  store.canvases.count > 1 else { return .ignored }
-            switchCanvas(by: press.key == .rightArrow ? 1 : -1)
+                  model.inputText.isEmpty, model.editingID == nil else { return .ignored }
+            if press.key == .rightArrow {
+                guard let id = model.selectedID,
+                      canvasGoals.contains(where: { $0.parentID == id }) else { return .ignored }
+                model.focusPath.append(id)
+            } else {
+                guard !model.focusPath.isEmpty else { return .ignored }
+                model.focusPath.removeLast()
+            }
+            model.selectedID = nil
+            model.inputParentID = nil
             return .handled
         }
         // 选时长预设时，左右键改选哪个预设，不切画布——两者的 guard 互斥，谁都不会抢对方的键
@@ -158,8 +169,19 @@ struct OverlayView: View {
         switchDirection = delta
         model.selectedID = nil
         model.inputParentID = nil
+        model.focusPath.removeAll()
         withAnimation(Motion.canvasSwitch) { store.cycleCanvas(by: delta) }
         flashCanvasName()
+    }
+
+    /// AppDelegate 的 ⌘←/⌘→ 走这里（⌘ 组合键会被 key-equivalent 通道吃掉，到不了
+    /// onKeyPress，见 installKeyMonitor 注释）。守卫和原 ←/→ 切画布一致；切画布必退到顶层
+    func requestCanvasSwitch(by delta: Int) {
+        guard model.animatedIn, model.pendingCheckInID == nil, !model.isChoosingDuration,
+              !model.showSettings, !model.showHistory,
+              model.inputText.isEmpty, model.editingID == nil,
+              store.canvases.count > 1 else { return }
+        switchCanvas(by: delta)
     }
 
     private func flashCanvasName() {
@@ -170,6 +192,46 @@ struct OverlayView: View {
             guard !Task.isCancelled else { return }
             withAnimation(Motion.fade) { showCanvasName = false }
         }
+    }
+
+    /// 下钻路径指示：`画布名 / 父目标 / … / 当前层`。点中间任何一段直接跳到那一层。
+    /// 栈空（顶层）时不显示；切画布 / 签到接管时整体隐藏
+    private var breadcrumb: some View {
+        HStack(spacing: 6) {
+            Text(store.activeCanvas.name)
+                .foregroundStyle(.white.opacity(0.5))
+            ForEach(Array(model.focusPath.enumerated()), id: \.offset) { index, id in
+                if let goal = store.goals.first(where: { $0.id == id }) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.25))
+                    Button {
+                        popFocusTo(index + 1)
+                    } label: {
+                        Text(goal.text)
+                            .lineLimit(1)
+                            .foregroundStyle(index == model.focusPath.count - 1
+                                ? .white.opacity(0.9) : .white.opacity(0.45))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .font(.system(size: 15, weight: .medium, design: .rounded))
+        .padding(.top, 40)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .opacity(model.focusPath.isEmpty ? 0 : 1)
+        .animation(Motion.fade, value: model.focusPath.isEmpty)
+        .allowsHitTesting(!model.focusPath.isEmpty)
+    }
+
+    /// 面包屑点击跳层：保留前 keep 段路径（0 = 回顶层）
+    private func popFocusTo(_ keep: Int) {
+        while model.focusPath.count > keep {
+            model.focusPath.removeLast()
+        }
+        model.selectedID = nil
+        model.inputParentID = nil
     }
 
     private var canvasNameFlash: some View {
@@ -328,14 +390,18 @@ struct OverlayView: View {
     }
 
     /// 顶层目标 + 紧随其后的子目标，按创建顺序；子目标永远跟在自己的父目标后面，
-    /// 不管它们在 store.goals 数组里实际的先后顺序（数组是按创建时间追加的）
+    /// 不管它们在 store.goals 数组里实际的先后顺序（数组是按创建时间追加的）。
+    /// 下钻时「当前层」是 focusPath 最后一条的子目标（栈空 = 画布顶层目标）——
+    /// 每层视图结构完全一样：当前层平铺 + 它们各自缩进一层的子目标
     private var groupedRows: [GoalRowInfo] {
         let all = canvasGoals
-        let topLevel = all.filter { $0.parentID == nil }
+        let currentLevel = model.focusPath.last == nil
+            ? all.filter { $0.parentID == nil }
+            : all.filter { $0.parentID == model.focusPath.last }
         var rows: [GoalRowInfo] = []
-        for parent in topLevel {
-            rows.append(GoalRowInfo(goal: parent, depth: 0))
-            for child in all where child.parentID == parent.id {
+        for goal in currentLevel {
+            rows.append(GoalRowInfo(goal: goal, depth: 0))
+            for child in all where child.parentID == goal.id {
                 rows.append(GoalRowInfo(goal: child, depth: 1))
             }
         }
@@ -390,6 +456,7 @@ struct OverlayView: View {
                             offsetFromBottom: placed.offset,
                             sizing: sizing,
                             revealed: model.animatedIn,
+                            hasChildren: canvasGoals.contains { $0.parentID == placed.info.goal.id },
                             isCompleting: model.completingIDs.contains(placed.info.goal.id),
                             isEditing: model.editingID == placed.info.goal.id,
                             isSelected: model.selectedID == placed.info.goal.id,
@@ -440,7 +507,7 @@ struct OverlayView: View {
     }
 
     private var emptyHint: some View {
-        Text(l10n.noGoalsYet)
+        Text(model.focusPath.isEmpty ? l10n.noGoalsYet : l10n.noSubgoalsYet)
             .font(.system(size: 26, weight: .regular, design: .rounded))
             .foregroundStyle(.white.opacity(0.16))
             .frame(maxWidth: .infinity, alignment: .center)
@@ -464,7 +531,7 @@ struct OverlayView: View {
                         .foregroundStyle(.white.opacity(0.32))
                         .lineLimit(1)
                         .padding(.leading, sizing.subIndent)
-                        .opacity(model.inputParentID != nil ? 1 : 0)
+                        .opacity(effectiveParentID != nil ? 1 : 0)
                 }
             }
             .frame(height: 26, alignment: .bottom)
@@ -507,8 +574,14 @@ struct OverlayView: View {
     }
 
     private var parentContextLabel: String {
-        guard let id = model.inputParentID else { return "" }
+        guard let id = effectiveParentID else { return "" }
         return store.goals.first(where: { $0.id == id })?.text ?? ""
+    }
+
+    /// 输入栏真正要挂的父目标：显式 Tab 选的优先，否则就是下钻当前层——下钻视图里
+    /// 直接输入就是在给当前层目标加子目标，不用先 Tab
+    private var effectiveParentID: UUID? {
+        model.inputParentID ?? model.focusPath.last
     }
 
     /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理
@@ -569,7 +642,7 @@ struct OverlayView: View {
         let text = model.inputText
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         withAnimation(Motion.commit) {
-            store.add(text, parentID: model.inputParentID, minutes: model.armedMinutes)
+            store.add(text, parentID: effectiveParentID, minutes: model.armedMinutes)
         }
         model.inputText = ""
         focusedField = .input
@@ -692,6 +765,8 @@ struct GoalRow: View {
     let offsetFromBottom: CGFloat
     let sizing: LayoutMetrics
     let revealed: Bool
+    /// 有子目标（→ 可下钻）——行尾一个小 chevron 提示
+    let hasChildren: Bool
     let isCompleting: Bool
     let isEditing: Bool
     let isSelected: Bool
@@ -725,6 +800,13 @@ struct GoalRow: View {
                     .minimumScaleFactor(0.6)
                     .contentShape(Rectangle())
                     .onTapGesture(perform: onBeginEdit)
+            }
+
+            // 有子目标的可下钻：行尾小 chevron，选中时高亮
+            if hasChildren {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: depth == 0 ? 11 : 9, weight: .semibold))
+                    .foregroundStyle(isSelected ? Palette.accent.opacity(0.8) : .white.opacity(0.22))
             }
 
             // 挂了倒计时的目标：右侧一个小徽章，显示剩余时间，每秒跳动

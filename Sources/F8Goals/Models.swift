@@ -27,7 +27,8 @@ struct Goal: Identifiable, Codable, Equatable {
     /// 完成时间（勾选时记录，用于渐隐动画与恢复）
     var completedAt: Date?
     var canvasID: UUID
-    /// nil = 顶层目标；非空 = 子目标（只允许一层），到后面阶段才接上产生它的交互
+    /// nil = 顶层目标；非空 = 子目标。下钻模式下任意深度：→ 进入选中行看它的子目标，
+    /// 每一屏仍然只平铺两层（当前层 + 缩进一层子目标）
     var parentID: UUID? = nil
     var timer: GoalTimer? = nil
     /// 倒计时签到结束时用户写的反馈（可选；结束时保存，随目标留存在 goals.json）
@@ -259,6 +260,9 @@ final class OverlayModel: ObservableObject {
     @Published var feedbackFocused = false
     /// 设置里的「历史」子面板
     @Published var showHistory = false
+    /// 下钻路径：从画布顶层一路进到当前视图的父目标链（最后一个是当前所在层）。空 = 顶层。
+    /// 故意不进 resetTransient——收起再呼出后保持原层级，和画布一样是导航状态不是瞬时状态
+    @Published var focusPath: [UUID] = []
     /// 正在展开时长预设选择（左右键选、回车确认）
     @Published var isChoosingDuration = false
     @Published var draftMinutesIndex = 0

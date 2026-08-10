@@ -76,6 +76,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.isChoosingDuration = true
             }
         }
+        // --focus 独立于上面的 else-if 链：可与 --show 同时用（--show --focus <ID>）
+        if CommandLine.arguments.contains("--focus"),
+           let idx = CommandLine.arguments.firstIndex(of: "--focus"),
+           CommandLine.arguments.indices.contains(idx + 1),
+           let focusID = UUID(uuidString: CommandLine.arguments[idx + 1].uppercased()) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                self.model.focusPath = [focusID]
+                self.show()
+            }
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -237,6 +248,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.showSettings.toggle()
                 return nil
             }
+            // ⌘← / ⌘→（123/124）切画布。左右方向键让位给下钻/返回了，切画布搬到
+            // command 组合——同样只有本地监听收得到，onKeyPress 会被 key-equivalent 吃掉
+            if (event.keyCode == 123 || event.keyCode == 124),
+               event.modifierFlags.contains(.command),
+               self.model.pendingCheckInID == nil {
+                self.overlayView?.requestCanvasSwitch(by: event.keyCode == 124 ? 1 : -1)
+                return nil
+            }
             return event
         }
     }
@@ -274,6 +293,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.showHistory = false
         } else if model.showSettings {
             model.showSettings = false
+        } else if !model.focusPath.isEmpty {
+            // 下钻视图里 Esc 先退层（和 ← 一样）；选中等残留状态跟着当前视图一起清掉
+            model.focusPath.removeLast()
+            model.selectedID = nil
+            model.inputParentID = nil
         } else if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
             model.inputParentID = nil
@@ -309,6 +333,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if store.activeCanvasID != next.canvasID {
             store.activeCanvasID = next.canvasID
+            // 目标在别的画布——退出下钻回顶层，避免焦点路径引用另一个画布的目标
+            model.focusPath.removeAll()
             store.save()
         }
         // 到期时如果正在编辑，先落盘，不吞掉没保存的修改
