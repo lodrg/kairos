@@ -107,23 +107,14 @@ struct OverlayView: View {
         // ⌘. 不在这里处理：已实测确认带 command 的组合键会被 AppKit 的 key-equivalent
         // 通道吃掉，根本不会到 onKeyPress。它跟 Esc 一样放在 AppDelegate 的
         // NSEvent 本地监听里（那条路在这个 App 里已经验证能用）。
-        // 方向键左右 = 下钻/返回：→ 进入选中行（有子目标时），← 退回上一层。
-        // 只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截——方向键语义
-        // 会让位给这些更具体的状态；返回 .ignored 时正常交回给 TextField 移动光标。
-        // 切画布移到 ⌘←/⌘→（AppDelegate 本地监听）——左右键同时做两件事会互相打架
+        // 方向键左右 = 切换画布（下钻的进入/退回交给 Tab / Shift+Tab，见 handleTab）——
+        // 只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截；
+        // 返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
             guard model.animatedIn, model.pendingCheckInID == nil, !model.isChoosingDuration,
-                  model.inputText.isEmpty, model.editingID == nil else { return .ignored }
-            if press.key == .rightArrow {
-                guard let id = model.selectedID,
-                      canvasGoals.contains(where: { $0.parentID == id }) else { return .ignored }
-                model.focusPath.append(id)
-            } else {
-                guard !model.focusPath.isEmpty else { return .ignored }
-                model.focusPath.removeLast()
-            }
-            model.selectedID = nil
-            model.inputParentID = nil
+                  model.inputText.isEmpty, model.editingID == nil,
+                  store.canvases.count > 1 else { return .ignored }
+            switchCanvas(by: press.key == .rightArrow ? 1 : -1)
             return .handled
         }
         // 选时长预设时，左右键改选哪个预设，不切画布——两者的 guard 互斥，谁都不会抢对方的键
@@ -174,16 +165,6 @@ struct OverlayView: View {
         flashCanvasName()
     }
 
-    /// AppDelegate 的 ⌘←/⌘→ 走这里（⌘ 组合键会被 key-equivalent 通道吃掉，到不了
-    /// onKeyPress，见 installKeyMonitor 注释）。守卫和原 ←/→ 切画布一致；切画布必退到顶层
-    func requestCanvasSwitch(by delta: Int) {
-        guard model.animatedIn, model.pendingCheckInID == nil, !model.isChoosingDuration,
-              !model.showSettings, !model.showHistory,
-              model.inputText.isEmpty, model.editingID == nil,
-              store.canvases.count > 1 else { return }
-        switchCanvas(by: delta)
-    }
-
     private func flashCanvasName() {
         nameFlashTask?.cancel()
         withAnimation(Motion.fade) { showCanvasName = true }
@@ -194,12 +175,17 @@ struct OverlayView: View {
         }
     }
 
-    /// 下钻路径指示：`画布名 / 父目标 / … / 当前层`。点中间任何一段直接跳到那一层。
-    /// 栈空（顶层）时不显示；切画布 / 签到接管时整体隐藏
+    /// 下钻路径指示：`画布 / 父目标 / … / 当前层`。每一段都能点：画布段一键回最上层，
+    /// 目标段跳到那一层。栈空（顶层）时不显示；切画布 / 签到接管时整体隐藏
     private var breadcrumb: some View {
         HStack(spacing: 6) {
-            Text(store.activeCanvas.name)
-                .foregroundStyle(.white.opacity(0.5))
+            Button {
+                popFocusTo(0)
+            } label: {
+                Text(store.activeCanvas.name)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .buttonStyle(.plain)
             ForEach(Array(model.focusPath.enumerated()), id: \.offset) { index, id in
                 if let goal = store.goals.first(where: { $0.id == id }) {
                     Image(systemName: "chevron.right")
@@ -728,26 +714,35 @@ struct OverlayView: View {
         model.selectedID = ids[next]
     }
 
-    /// Tab 双向覆盖两种输入：输入框有字时缩进待建的这条；选中已有目标时把它拆成几条。
-    /// Shift+Tab 退回顶层。已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift。
-    /// 选中优先于「最后一条顶层目标」，因为选中是用户明确指的对象
+    /// Tab 是层级操作的总入口，三种情况互斥：
+    /// 1. Shift+Tab = 退回：清挂靠对象；在下钻视图里同时退一层
+    /// 2. 输入框有字 = 把待建的这条缩进为子目标（有选中挂选中那条，否则挂最后一条当前层目标）
+    /// 3. 输入框空 + 有选中 = 进入它的子目标视图（没有子目标也进——空视图里直接打字就是在加）
+    /// 已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift
     private func handleTab(shift: Bool) {
         if shift {
             model.inputParentID = nil
+            if !model.focusPath.isEmpty {
+                model.focusPath.removeLast()
+                model.selectedID = nil
+            }
             return
         }
-        // 有明确选中就挂到那条，哪怕当前已经在给别的目标加子目标——选中是用户明确指的对象
+        // 输入框有字：缩进待建的这条
+        if model.editingID == nil,
+           !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let target = model.selectedID ?? visibleRows.last(where: { $0.depth == 0 })?.goal.id
+            if let target {
+                model.inputParentID = target
+                model.selectedID = nil
+            }
+            return
+        }
+        // 输入框空 + 有选中：下钻进入它的子目标视图
         if let selected = model.selectedID {
-            model.inputParentID = selected
+            model.focusPath.append(selected)
             model.selectedID = nil
-            return
-        }
-        // 没有选中、又已经在子目标模式里：只允许一层嵌套，没有更深的地方可去，不动。
-        // 之前这里会悄悄换成「最后一条顶层目标」，等于偷偷改了父目标
-        guard model.inputParentID == nil else { return }
-        if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let lastTopLevel = visibleRows.last(where: { $0.depth == 0 })?.goal.id {
-            model.inputParentID = lastTopLevel
+            model.inputParentID = nil
         }
     }
 }

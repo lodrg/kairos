@@ -248,14 +248,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.showSettings.toggle()
                 return nil
             }
-            // ⌘← / ⌘→（123/124）切画布。左右方向键让位给下钻/返回了，切画布搬到
-            // command 组合——同样只有本地监听收得到，onKeyPress 会被 key-equivalent 吃掉
-            if (event.keyCode == 123 || event.keyCode == 124),
-               event.modifierFlags.contains(.command),
-               self.model.pendingCheckInID == nil {
-                self.overlayView?.requestCanvasSwitch(by: event.keyCode == 124 ? 1 : -1)
-                return nil
-            }
             return event
         }
     }
