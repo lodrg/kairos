@@ -106,6 +106,13 @@ struct OverlayView: View {
                 focusedField = .input
             }
         }
+        // 自动武装开关一打开，输入栏的武装指示立刻亮起（不用等下次呼出）——
+        // 用户刚开开关就打字，心里有数这条是带倒计时的
+        .onChange(of: settingsStore.settings.autoArmNewGoals) { _, on in
+            if on, model.armedMinutes == nil {
+                model.armedMinutes = settingsStore.settings.defaultMinutes
+            }
+        }
         // ⌘. 不在这里处理：已实测确认带 command 的组合键会被 AppKit 的 key-equivalent
         // 通道吃掉，根本不会到 onKeyPress。它跟 Esc 一样放在 AppDelegate 的
         // NSEvent 本地监听里（那条路在这个 App 里已经验证能用）。
@@ -696,6 +703,11 @@ struct OverlayView: View {
             return
         }
         withAnimation(Motion.commit) {
+            // 自动武装兜底：设置里刚打开开关时（覆盖层没重新呼出过）armedMinutes 还是
+            // nil——创建时再补一次判断，保证「打开即生效」而不是要等下次呼出
+            if model.armedMinutes == nil, settingsStore.settings.autoArmNewGoals {
+                model.armedMinutes = settingsStore.settings.defaultMinutes
+            }
             store.add(text, parentID: model.inputParentID, minutes: model.armedMinutes)
         }
         model.inputText = ""
