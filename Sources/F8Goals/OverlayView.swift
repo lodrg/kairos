@@ -607,13 +607,14 @@ struct OverlayView: View {
 
     // MARK: - 键盘：选中 + 子目标
 
-    /// 上下键在当前可见行里移动选中项；没有选中时，向下从紧贴输入栏的那行开始，
-    /// 向上从最旧的那行开始。到头不环绕——目标列表有明确的首尾，不是画布那种环
+    /// 上下键在当前可见行里移动选中项。可见行按「旧→新」排列（上面旧、下面新），
+    /// 输入栏在列表下方——所以从输入栏按 ↑ 应该先碰到紧贴输入栏的那条（= 列表最后一条，
+    /// 最新），再继续往上走；按 ↓ 则从最上面（最旧）那条开始。之前把方向搞反了。
     private func moveSelection(by delta: Int) {
         let ids = visibleRows.map(\.goal.id)
         guard !ids.isEmpty else { return }
         guard let current = model.selectedID, let idx = ids.firstIndex(of: current) else {
-            model.selectedID = delta > 0 ? ids.last : ids.first
+            model.selectedID = delta > 0 ? ids.first : ids.last
             return
         }
         let next = max(0, min(ids.count - 1, idx + delta))
@@ -691,6 +692,11 @@ struct GoalRow: View {
                     .contentShape(Rectangle())
                     .onTapGesture(perform: onBeginEdit)
             }
+
+            // 挂了倒计时的目标：右侧一个小徽章，显示剩余时间，每秒跳动
+            if let timer = goal.timer {
+                CountdownBadge(firesAt: timer.firesAt, revealed: revealed, compact: depth == 1)
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 22)
@@ -712,6 +718,44 @@ struct GoalRow: View {
         .animation(Motion.fade, value: isSelected)
         // 新建的目标淡入，而不是直接冒出来
         .transition(.opacity)
+    }
+}
+
+// MARK: - 倒计时徽章
+
+/// 挂在带计时器目标行右侧的小徽章：timer 图标 + 剩余 mm:ss，每秒跳动。
+/// 用 TimelineView(.animation(minimumInterval: 1))——覆盖层不可见时（revealed=false）
+/// 随暂停条件一起停，不为每个目标各挂一个 Timer。
+struct CountdownBadge: View {
+    let firesAt: Date
+    let revealed: Bool
+    /// 子目标行的更小一号
+    var compact = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0, paused: !revealed)) { timeline in
+            let remaining = firesAt.timeIntervalSince(timeline.date)
+            HStack(spacing: 5) {
+                Image(systemName: "timer")
+                    .font(.system(size: compact ? 10 : 13, weight: .medium))
+                Text(format(remaining))
+                    .font(.system(size: compact ? 11 : 15, weight: .medium, design: .rounded))
+                    .monospacedDigit()
+            }
+            .foregroundStyle(remaining > 0 ? Color.white.opacity(0.55) : Palette.accent)
+            .padding(.horizontal, 9)
+            .padding(.vertical, compact ? 3 : 5)
+            .background(Capsule().fill(Color.white.opacity(0.07)))
+            .contentShape(Capsule())
+            .allowsHitTesting(false)
+        }
+    }
+
+    private func format(_ t: TimeInterval) -> String {
+        let total = max(0, Int(t.rounded()))
+        let h = total / 3600, m = (total % 3600) / 60, s = total % 60
+        if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%02d:%02d", m, s)
     }
 }
 
