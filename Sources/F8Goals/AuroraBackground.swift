@@ -33,16 +33,21 @@ struct AuroraBackground: View {
                             smoothsColors: true
                         )
 
-                        // 呼吸：辉光透明度沿 7s 周期的慢正弦起伏。
-                        // 之前摆幅只有 0.030↔0.060（差 3%，肉眼无感），现在 0↔0.26，
-                        // 一明一灭的呼吸感才看得出来；颜色带一点蓝调更像极光而不是白雾。
+                        // 呼吸辉光：0↔0.45，7s 周期。之前摆幅 0↔0.26 在暗背景下
+                        // 肉眼仍难分辨；再大一点，一明一灭才真的看得出来
                         RadialGradient(
                             colors: [Color(red: 0.55, green: 0.72, blue: 1.0)
-                                .opacity(breathingEnabled ? breatheOpacity(t) : 0.05), .clear],
+                                .opacity(breathingEnabled ? glowOpacity(t) : 0.08), .clear],
                             center: .init(x: 0.5, y: 0.30),
                             startRadius: 0,
                             endRadius: 860
                         )
+
+                        // 整屏呼吸变暗：全屏黑 0.12↔0.38 与辉光同相——辉光亮时背景最亮、
+                        // 辉光灭时背景最暗。单靠辉光只有局部亮度变化，加上这一层，
+                        // 整块背景都在一明一灭，呼吸感才明确
+                        Color.black
+                            .opacity(breathingEnabled ? dimOpacity(t) : 0.25)
                     }
                 }
             } else {
@@ -68,10 +73,14 @@ struct AuroraBackground: View {
         .onAppear { if grain == nil { grain = Grain.make() } }
     }
 
-    /// 0 ↔ 0.26，周期 7s。之前是 0.030↔0.060，幅度压过头了用户根本看不出在呼吸。
-    /// 现在一明一灭很明显，但仍然是 7s 的慢周期，不会像警报灯那样抢戏
-    private func breatheOpacity(_ t: Double) -> Double {
-        max(0, 0.13 + 0.13 * sin(t * (2 * .pi / 7.0)))
+    /// 辉光 0↔0.45，周期 7s
+    private func glowOpacity(_ t: Double) -> Double {
+        max(0, 0.225 + 0.225 * sin(t * (2 * .pi / 7.0)))
+    }
+
+    /// 全屏变暗 0.12↔0.38，周期 7s、与辉光同相（辉光亮时背景最亮、灭时最暗）
+    private func dimOpacity(_ t: Double) -> Double {
+        0.25 + 0.13 * sin(t * (2 * .pi / 7.0))
     }
 
     /// 四角钉死在角上，边中点只沿自己那条边滑动，中心点自由游走。
