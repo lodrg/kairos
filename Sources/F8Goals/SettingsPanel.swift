@@ -10,9 +10,10 @@ struct SettingsPanel: View {
 
     @State private var presetsText = ""
     @State private var newCanvasName = ""
+    @State private var defaultMinutesText = ""
     @FocusState private var focusedField: Field?
 
-    private enum Field: Hashable { case presets, newCanvas }
+    private enum Field: Hashable { case presets, newCanvas, defaultMinutes }
 
     private var l10n: L10n { L10n(language: settingsStore.settings.language) }
 
@@ -57,6 +58,7 @@ struct SettingsPanel: View {
         }
         .onAppear {
             presetsText = settingsStore.settings.durationPresetsMinutes.map(String.init).joined(separator: " ")
+            defaultMinutesText = "\(settingsStore.settings.defaultMinutes)"
         }
     }
 
@@ -81,11 +83,39 @@ struct SettingsPanel: View {
                     .onSubmit(commitPresets)
             }
 
-            SettingsStepper(
-                label: l10n.defaultDuration,
-                value: $settingsStore.settings.defaultMinutes,
-                range: 1...180, step: 5, unit: "m"
-            )
+            settingsRow(l10n.defaultDuration) {
+                HStack(spacing: 8) {
+                    // 常用预设：点一下就设为默认（⌘+Enter 用它）
+                    ForEach(settingsStore.settings.durationPresetsMinutes, id: \.self) { minutes in
+                        let active = settingsStore.settings.defaultMinutes == minutes
+                        Button {
+                            setDefault(minutes: minutes)
+                        } label: {
+                            Text("\(minutes)m")
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(active ? .black.opacity(0.85) : .white.opacity(0.5))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(active ? Palette.accent : Color.white.opacity(0.08),
+                                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    // 自定义输入：直接敲数字回车，1–180 分钟
+                    TextField("", text: $defaultMinutesText)
+                        .font(.system(size: 16, weight: .medium, design: .rounded))
+                        .textFieldStyle(.plain)
+                        .foregroundStyle(.white)
+                        .tint(Palette.accent)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 56)
+                        .focused($focusedField, equals: .defaultMinutes)
+                        .onSubmit(commitDefaultMinutes)
+                    Text("m")
+                        .font(.system(size: 14, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.4))
+                }
+            }
             SettingsToggle(label: l10n.autoArmNewGoals, isOn: $settingsStore.settings.autoArmNewGoals)
             SettingsToggle(label: l10n.keepArmedAfterCreate, isOn: $settingsStore.settings.keepArmedAfterCreate)
             SettingsToggle(label: l10n.escDismissCheckIn, isOn: $settingsStore.settings.checkInEscDismisses)
@@ -102,6 +132,21 @@ struct SettingsPanel: View {
         }
         // 解析不出有效数字就还原成当前值，不留一个空列表——那样武装面板就没有可选的时长了
         presetsText = settingsStore.settings.durationPresetsMinutes.map(String.init).joined(separator: " ")
+    }
+
+    /// 点常用预设块：直接设为默认时长，输入框同步
+    private func setDefault(minutes: Int) {
+        settingsStore.settings.defaultMinutes = minutes
+        defaultMinutesText = "\(minutes)"
+    }
+
+    /// 自定义输入回车：解析 1–180，越界钳制；解析不了就还原当前值
+    private func commitDefaultMinutes() {
+        let parsed = Int(defaultMinutesText.trimmingCharacters(in: .whitespaces))
+            ?? settingsStore.settings.defaultMinutes
+        let clamped = min(max(parsed, 1), 180)
+        settingsStore.settings.defaultMinutes = clamped
+        defaultMinutesText = "\(clamped)"
     }
 
     // MARK: - 画布
@@ -331,44 +376,6 @@ struct SettingsToggle: View {
         }
         .buttonStyle(.plain)
         .animation(Motion.fade, value: isOn)
-    }
-}
-
-// MARK: - 数值步进器
-
-struct SettingsStepper: View {
-    let label: String
-    @Binding var value: Int
-    let range: ClosedRange<Int>
-    let step: Int
-    let unit: String
-
-    var body: some View {
-        HStack {
-            Text(label)
-                .font(.system(size: 17, weight: .regular, design: .rounded))
-                .foregroundStyle(.white.opacity(0.75))
-            Spacer()
-            HStack(spacing: 14) {
-                stepButton("minus") { value = max(range.lowerBound, value - step) }
-                Text("\(value)\(unit)")
-                    .font(.system(size: 16, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.88))
-                    .frame(minWidth: 44)
-                stepButton("plus") { value = min(range.upperBound, value + step) }
-            }
-        }
-    }
-
-    private func stepButton(_ symbol: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(.white.opacity(0.6))
-                .frame(width: 24, height: 24)
-                .background(Color.white.opacity(0.07), in: Circle())
-        }
-        .buttonStyle(.plain)
     }
 }
 
