@@ -613,13 +613,18 @@ struct OverlayView: View {
     }
 
     private func complete(_ goal: Goal) {
-        model.selectedID = goal.id
+        // 撤销完成（淡出中再点）：目标要回来了，选中光标不动
         if goal.isDone {
             model.completingIDs.remove(goal.id)
             model.retiredIDs.remove(goal.id)
             withAnimation(Motion.commit) { store.toggle(goal.id) }
             return
         }
+
+        // 完成：选中光标别停在会被淡出退休的目标上——挤到列表里下一条可见目标
+        // （顺序上紧随其后；没有就前一条；都没有就清空）。这样勾掉一条后光标总在
+        // 下一行等着，连续回车能一路勾下去
+        model.selectedID = nextVisibleID(after: goal.id)
 
         store.toggle(goal.id)
         model.completingIDs.insert(goal.id)
@@ -635,6 +640,17 @@ struct OverlayView: View {
     }
 
     // MARK: - 键盘：选中 + 子目标
+
+    /// 目标完成退场后选中光标的落点：列表顺序上紧随其后的一条（更新的、更靠近输入栏）；
+    /// 没有就前一条；都没有就清空（列表空了）。
+    /// 注意要在目标 retire 之前调用——那时它还在 visibleRows 里，能算出它的位置
+    private func nextVisibleID(after id: UUID) -> UUID? {
+        let ids = visibleRows.map(\.goal.id)
+        guard let idx = ids.firstIndex(of: id) else { return nil }
+        if idx + 1 < ids.count { return ids[idx + 1] }
+        if idx > 0 { return ids[idx - 1] }
+        return nil
+    }
 
     /// 上下键在当前可见行里移动选中项。可见行按「旧→新」排列（上面旧、下面新），
     /// 输入栏在列表下方——所以从输入栏按 ↑ 应该先碰到紧贴输入栏的那条（= 列表最后一条，
