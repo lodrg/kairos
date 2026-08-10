@@ -203,7 +203,8 @@ struct OverlayView: View {
 
     /// 全屏重选时长卡片。Esc 继续后的专用界面：大块预设 + 自定义输入，整屏呈现，
     /// 不再挤在输入栏底部那条小横条里。←/→ 和回车复用 isChoosingDuration 的既有键位；
-    /// Esc / 点卡片外 = 取消（目标已按原时长继续）
+    /// Esc / 点卡片外 = 取消（目标已按原时长继续）。
+    /// 视觉与签到卡片同款：不套卡片框，直接浮在压暗的极光上——整屏大字极简
     private var retimePicker: some View {
         Group {
             if let id = model.retimingGoalID, let goal = store.goals.first(where: { $0.id == id }) {
@@ -213,13 +214,13 @@ struct OverlayView: View {
                         .contentShape(Rectangle())
                         .onTapGesture(perform: cancelRetime)
 
-                    VStack(spacing: 30) {
+                    VStack(spacing: 26) {
                         Text(l10n.retimeTitle)
-                            .font(.system(size: 24, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.9))
+                            .font(.system(size: 22, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.5))
 
                         Text(goal.text)
-                            .font(.system(size: 44, weight: .medium, design: .rounded))
+                            .font(.system(size: 50, weight: .medium, design: .rounded))
                             .foregroundStyle(.white)
                             .multilineTextAlignment(.center)
                             .lineLimit(2)
@@ -228,32 +229,32 @@ struct OverlayView: View {
                             ForEach(Array(durationOptions.enumerated()), id: \.offset) { index, minutes in
                                 let active = index == model.draftMinutesIndex
                                 Text(minutes.map { "\($0)m" } ?? l10n.durationOff)
-                                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                                    .font(.system(size: 22, weight: .semibold, design: .rounded))
                                     .foregroundStyle(active ? .black.opacity(0.9) : .white.opacity(0.72))
-                                    .frame(width: 96, height: 78)
-                                    .background(active ? Palette.accent : Color.white.opacity(0.07),
-                                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .frame(width: 88, height: 64)
+                                    .background(active ? Palette.accent : Color.white.opacity(0.06),
+                                                in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                                     .contentShape(Rectangle())
                                     .onTapGesture { model.draftMinutesIndex = index }
                             }
                         }
 
-                        // 自定义时长：点进去输入数字回车，1–180 分钟
+                        // 自定义时长：与签到卡片反馈输入框同款样式，点进去输入数字回车
                         HStack(spacing: 8) {
                             TextField(l10n.defaultMinutesPlaceholder, text: $retimeCustomText)
-                                .font(.system(size: 20, weight: .medium, design: .rounded))
+                                .font(.system(size: 18, weight: .regular, design: .rounded))
                                 .textFieldStyle(.plain)
                                 .foregroundStyle(.white)
                                 .tint(Palette.accent)
                                 .multilineTextAlignment(.trailing)
-                                .frame(width: 110)
+                                .frame(width: 120)
                                 .onSubmit(commitRetimeCustom)
                             Text("m")
-                                .font(.system(size: 17, weight: .medium, design: .rounded))
+                                .font(.system(size: 15, weight: .medium, design: .rounded))
                                 .foregroundStyle(.white.opacity(0.4))
                         }
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 10)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
                         .background {
                             RoundedRectangle(cornerRadius: 12, style: .continuous)
                                 .fill(Color.white.opacity(0.08))
@@ -262,16 +263,11 @@ struct OverlayView: View {
 
                         Text(l10n.retimeHint)
                             .font(.system(size: 13, weight: .regular, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.35))
+                            .foregroundStyle(.white.opacity(0.3))
                     }
                     .padding(.horizontal, 56)
-                    .padding(.vertical, 44)
-                    .frame(maxWidth: 780)
-                    .background {
-                        RoundedRectangle(cornerRadius: 24, style: .continuous)
-                            .fill(Color.black.opacity(0.5))
-                            .stroke(.white.opacity(0.09), lineWidth: 1)
-                    }
+                    .padding(.vertical, 40)
+                    .frame(maxWidth: 720)
                 }
                 .transition(.opacity)
             }

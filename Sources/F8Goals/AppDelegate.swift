@@ -310,8 +310,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func scanForExpiredTimers() {
-        // 一次只处理一条；处理完的下一次 tick（≤5s）会捡下一条排队的
-        guard model.pendingCheckInID == nil else { return }
+        // 一次只处理一条；处理完的下一次 tick（≤5s）会捡下一条排队的。
+        // 全屏重选时长开着时也不弹新卡——用户正对着那个界面，别叠卡
+        guard model.pendingCheckInID == nil, model.retimingGoalID == nil else { return }
         let now = Date()
         let overdue = store.goals.filter { !$0.isDone && ($0.timer?.firesAt ?? .distantFuture) <= now }
         guard let next = overdue.min(by: { ($0.timer?.firesAt ?? .distantFuture) < ($1.timer?.firesAt ?? .distantFuture) })
