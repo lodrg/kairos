@@ -86,11 +86,6 @@ struct SettingsPanel: View {
                 value: $settingsStore.settings.defaultMinutes,
                 range: 1...180, step: 5, unit: "m"
             )
-            SettingsStepper(
-                label: l10n.snoozeDuration,
-                value: $settingsStore.settings.snoozeMinutes,
-                range: 1...60, step: 1, unit: "m"
-            )
             SettingsToggle(label: l10n.autoArmNewGoals, isOn: $settingsStore.settings.autoArmNewGoals)
             SettingsToggle(label: l10n.keepArmedAfterCreate, isOn: $settingsStore.settings.keepArmedAfterCreate)
             SettingsToggle(label: l10n.escDismissCheckIn, isOn: $settingsStore.settings.checkInEscDismisses)

@@ -132,18 +132,8 @@ struct OverlayView: View {
         // Tab 不在这里处理：onKeyPress 收不到 Shift+Tab（AppKit 焦点循环先吃掉）。
         // 它跟 Esc 一样放在 AppDelegate 的 NSEvent 本地监听里（那条路已验证能用），
         // 由 handleTabRequest 转发到 handleTab。
-        // 签到卡片的四个动作：字母和数字任选一种，签到没弹出时完全不拦截任何键
-        .onKeyPress { press in
-            guard let id = model.pendingCheckInID else { return .ignored }
-            switch press.characters.lowercased() {
-            case "d", "1": resolveCheckIn(id: id, action: .done)
-            case "k", "2": resolveCheckIn(id: id, action: .keepGoing)
-            case "s", "3": resolveCheckIn(id: id, action: .snooze)
-            case "x", "4": resolveCheckIn(id: id, action: .drop)
-            default: return .ignored
-            }
-            return .handled
-        }
+        // 签到卡片的按键不在这里处理：Enter 走卡片输入框的 onSubmit，Esc 走 AppDelegate
+        // 本地监听——就两个键，不需要在 SwiftUI 层再拦一遍
     }
 
     private func switchCanvas(by delta: Int) {
@@ -208,7 +198,9 @@ struct OverlayView: View {
 
     // MARK: - 强制签到
 
-    enum CheckInAction { case done, keepGoing, snooze, drop }
+    /// 签到卡片的两个动作；Enter（结束）走卡片输入框的 onSubmit，Esc（继续）走
+    /// AppDelegate 的 continueCheckInWithTimePick——这里只管状态转换，不碰键盘
+    enum CheckInAction { case done, keepGoing }
 
     /// 到期目标的签到卡片。scrim 吞掉点击而不是穿透——这是「强制」的一部分：
     /// 点卡片外面不能把它关掉，退路只有 Snooze 和菜单栏 Quit。
@@ -225,12 +217,7 @@ struct OverlayView: View {
                         goal: goal,
                         l10n: l10n,
                         feedbackText: $model.checkInFeedback,
-                        feedbackFocused: $model.feedbackFocused,
-                        onSubmitFeedback: { resolveCheckIn(id: id, action: .done) },
-                        onEnd: { resolveCheckIn(id: id, action: .done) },
-                        onKeepGoing: { resolveCheckIn(id: id, action: .keepGoing) },
-                        onSnooze: { resolveCheckIn(id: id, action: .snooze) },
-                        onDrop: { resolveCheckIn(id: id, action: .drop) }
+                        onSubmitFeedback: { resolveCheckIn(id: id, action: .done) }
                     )
                 }
                 .transition(.opacity)
@@ -244,28 +231,38 @@ struct OverlayView: View {
             model.pendingCheckInID = nil
             return
         }
-        // 先清掉签到态再执行动作：卡片立即开始淡出，且 complete(goal) 不会因为
-        // 「签到还未决」被挡住（它本身没设这个 guard，但顺序对了就不用纠结这件事）
+        // 先清掉签到态再执行动作：卡片立即开始淡出
         model.pendingCheckInID = nil
-        model.feedbackFocused = false
         switch action {
         case .done:
             saveFeedback(goalID: id) // 反馈随完成一起存进 goals.json
             complete(goal)
         case .keepGoing:
-            saveFeedback(goalID: id) // 继续也保留反馈作为笔记
+            // 继续：按原时长重启计时。反馈草稿不清——下次到期弹卡片时输入还在
             if let minutes = goal.timer?.minutes {
                 store.setTimer(goalID: id, minutes: minutes)
             }
-        case .snooze:
-            store.snoozeTimer(goalID: id, minutes: settingsStore.settings.snoozeMinutes)
-        case .drop:
-            store.update(id: id, text: "")
         }
         focusedField = .input
     }
 
-    /// 把反馈草稿存到目标上；Snooze 不清草稿（卡片重新弹出时输入还在）
+    /// Esc：继续这个目标——先按原时长重启计时，再弹时长选择让用户重选
+    /// （←/→ 选、回车确认；再按 Esc 取消重选，保持原时长）
+    func continueCheckInWithTimePick() {
+        guard let id = model.pendingCheckInID else { return }
+        resolveCheckIn(id: id, action: .keepGoing)
+        model.isChoosingDuration = true
+        model.armingTargetID = id
+        // 默认选中它原来的时长（在预设里时），否则第一个
+        if let minutes = store.goals.first(where: { $0.id == id })?.timer?.minutes,
+           let idx = durationOptions.firstIndex(where: { $0 == minutes }) {
+            model.draftMinutesIndex = idx
+        } else {
+            model.draftMinutesIndex = 0
+        }
+    }
+
+    /// 把反馈草稿存到目标上；继续（keepGoing）不清草稿——下次到期弹卡片时输入还在
     private func saveFeedback(goalID: UUID) {
         let text = model.checkInFeedback
         model.checkInFeedback = ""

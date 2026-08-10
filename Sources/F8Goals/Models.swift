@@ -10,8 +10,8 @@ struct Canvas: Identifiable, Codable, Equatable {
     var hueShift: Double
 }
 
-/// 倒计时字段。武装/到期靠 GoalStore.setTimer / snoozeTimer 和 AppDelegate 里的
-/// 周期扫描——不给每个目标挂 scheduledTimer，那种跨系统睡眠不能正确触发
+/// 倒计时字段。武装/到期靠 GoalStore.setTimer 和 AppDelegate 里的周期扫描——
+/// 不给每个目标挂 scheduledTimer，那种跨系统睡眠不能正确触发
 struct GoalTimer: Codable, Equatable {
     var minutes: Int
     var startedAt: Date
@@ -191,14 +191,6 @@ final class GoalStore: ObservableObject {
         save()
     }
 
-    /// 从现在起重新数 minutes 分钟，snoozeCount 累加——签到卡片的 Snooze 用这个
-    func snoozeTimer(goalID: UUID, minutes: Int) {
-        guard let index = goals.firstIndex(where: { $0.id == goalID }) else { return }
-        let previousCount = goals[index].timer?.snoozeCount ?? 0
-        goals[index].timer = GoalTimer(minutes: minutes, startedAt: Date(), snoozeCount: previousCount + 1)
-        save()
-    }
-
     /// 保存签到反馈；空文本 = 清掉已有反馈。反馈随目标留在 goals.json，历史面板从这里读
     func setFeedback(id: UUID, feedback: String) {
         guard let index = goals.firstIndex(where: { $0.id == id }) else { return }
@@ -274,11 +266,8 @@ final class OverlayModel: ObservableObject {
     /// 到期后待处理的签到；绝不能被 resetTransient 清掉——收起动画完成时会调用它，
     /// 清了就等于让签到被「收起」悄悄取消掉，等于没做强制这件事
     @Published var pendingCheckInID: UUID?
-    /// 签到卡片上反馈输入框的草稿；Snooze 后保留，重新弹出时还在
+    /// 签到卡片上反馈输入框的草稿；继续（keepGoing）后保留，下次到期弹卡片时还在
     @Published var checkInFeedback = ""
-    /// 反馈输入框是否正在聚焦——聚焦时 D/K/S/X、1-4 这些键是文字输入，
-    /// 快捷键要全部让位（AppDelegate 本地监听靠这个判断）
-    @Published var feedbackFocused = false
     /// 设置里的「历史」子面板
     @Published var showHistory = false
     /// 正在展开时长预设选择（左右键选、回车确认）
@@ -308,6 +297,5 @@ final class OverlayModel: ObservableObject {
         showSettings = false
         showHistory = false
         checkInFeedback = ""
-        feedbackFocused = false
     }
 }

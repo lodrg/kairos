@@ -1,22 +1,15 @@
 import SwiftUI
 
-/// 强制签到卡片：到期目标 + 反馈输入框 + 四个动作，键盘（字母/数字）和点击都能触发。
-/// 没有关闭按钮——退路是 Snooze 和菜单栏 Quit，不是「点旁边空白处消失」。
-///
-/// 键盘分工：
-/// - 反馈输入框没聚焦时，D/K/S/X 或 1/2/3/4 直接触发动作（AppDelegate 本地监听）
-/// - 点击（或 Tab）聚焦输入框后，字母数字是文字输入，快捷键自动让位；
-///   在输入框里按回车 = 提交反馈并结束
+/// 强制签到卡片：到期目标 + 反馈输入框。两个键搞定全部，不需要任何快捷键：
+/// - 回车 = 保存反馈并结束目标
+/// - Esc = 继续这个目标并重新选时长（AppDelegate 本地监听处理，见 handleEscape）
+/// 输入框自动聚焦——没有快捷键需要让位，字母数字全是输入，不存在冲突。
+/// 没有关闭按钮——退路是 Esc（继续）和菜单栏 Quit，不是「点旁边空白处消失」。
 struct CheckInView: View {
     let goal: Goal
     let l10n: L10n
     @Binding var feedbackText: String
-    @Binding var feedbackFocused: Bool
     let onSubmitFeedback: () -> Void
-    let onEnd: () -> Void
-    let onKeepGoing: () -> Void
-    let onSnooze: () -> Void
-    let onDrop: () -> Void
 
     @FocusState private var feedbackFieldFocused: Bool
 
@@ -32,13 +25,7 @@ struct CheckInView: View {
                 .multilineTextAlignment(.center)
                 .lineLimit(3)
 
-            if let count = goal.timer?.snoozeCount, count > 0 {
-                Text(count == 1 ? l10n.snoozedOnce : l10n.snoozedCount(count))
-                    .font(.system(size: 16, weight: .regular, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.35))
-            }
-
-            // 反馈输入框：回车 = 提交反馈并结束
+            // 反馈输入框：回车 = 保存反馈并结束
             TextField(l10n.feedbackPlaceholder, text: $feedbackText)
                 .font(.system(size: 18, weight: .regular, design: .rounded))
                 .textFieldStyle(.plain)
@@ -53,40 +40,18 @@ struct CheckInView: View {
                 }
                 .focused($feedbackFieldFocused)
                 .onSubmit(onSubmitFeedback)
-                .onChange(of: feedbackFieldFocused) { _, newValue in
-                    feedbackFocused = newValue
+                .onAppear {
+                    // 卡片弹出就聚焦输入框：打字即记录，不用先点。
+                    // 延迟一拍让弹出/激活先落地，焦点才拿得到
+                    DispatchQueue.main.async { feedbackFieldFocused = true }
                 }
 
             Text(l10n.feedbackHint)
-                .font(.system(size: 13, weight: .regular, design: .rounded))
-                .foregroundStyle(.white.opacity(0.3))
-
-            HStack(spacing: 22) {
-                action(l10n.end, key: "D/1", tint: Palette.done, perform: onEnd)
-                action(l10n.keepGoing, key: "K/2", tint: Palette.accent, perform: onKeepGoing)
-                action(l10n.snooze, key: "S/3", tint: .white.opacity(0.6), perform: onSnooze)
-                action(l10n.drop, key: "X/4", tint: .white.opacity(0.45), perform: onDrop)
-            }
-            .padding(.top, 4)
+                .font(.system(size: 14, weight: .regular, design: .rounded))
+                .foregroundStyle(.white.opacity(0.35))
         }
         .padding(.horizontal, 56)
         .padding(.vertical, 40)
         .frame(maxWidth: 720)
-    }
-
-    private func action(_ label: String, key: String, tint: Color, perform: @escaping () -> Void) -> some View {
-        Button(action: perform) {
-            VStack(spacing: 11) {
-                Text(key)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
-                    .foregroundStyle(tint)
-                    .frame(width: 38, height: 30)
-                    .background(tint.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                Text(label)
-                    .font(.system(size: 17, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(0.82))
-            }
-        }
-        .buttonStyle(.plain)
     }
 }

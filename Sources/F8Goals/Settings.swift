@@ -6,11 +6,10 @@ struct Settings: Codable, Equatable {
     // 倒计时签到
     var durationPresetsMinutes: [Int] = [5, 15, 25, 45]
     var defaultMinutes = 25
-    var snoozeMinutes = 5
     var autoArmNewGoals = false
     var keepArmedAfterCreate = false
-    /// 打开后，Esc / 单击 F10 / 菜单栏都能在签到未决时正常收起（相当于「关闭签到」，
-    /// 不等于 Done/Snooze 等任何动作）。默认关——这是特意要「强制」的功能
+    /// 打开后，单击 F10 能在签到未决时正常收起（相当于「关闭签到」，不等于任何动作）。
+    /// 默认关——这是特意要「强制」的功能；Esc 永远是「继续」，不受这个开关影响
     var checkInEscDismisses = false
 
     // 外观
@@ -32,7 +31,6 @@ struct Settings: Codable, Equatable {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         durationPresetsMinutes = try c.decodeIfPresent([Int].self, forKey: .durationPresetsMinutes) ?? [5, 15, 25, 45]
         defaultMinutes = try c.decodeIfPresent(Int.self, forKey: .defaultMinutes) ?? 25
-        snoozeMinutes = try c.decodeIfPresent(Int.self, forKey: .snoozeMinutes) ?? 5
         autoArmNewGoals = try c.decodeIfPresent(Bool.self, forKey: .autoArmNewGoals) ?? false
         keepArmedAfterCreate = try c.decodeIfPresent(Bool.self, forKey: .keepArmedAfterCreate) ?? false
         checkInEscDismisses = try c.decodeIfPresent(Bool.self, forKey: .checkInEscDismisses) ?? false

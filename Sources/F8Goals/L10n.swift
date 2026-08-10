@@ -30,15 +30,9 @@ struct L10n {
     // MARK: 签到卡片
 
     var timeIsUp: String { zh ? "时间到" : "Time's up" }
-    var snoozedOnce: String { zh ? "已延后 1 次" : "Snoozed once" }
-    func snoozedCount(_ n: Int) -> String { zh ? "已延后 \(n) 次" : "Snoozed \(n) times" }
-    /// 反馈输入框占位符 + 主按钮都围绕「记录反馈 → 结束/继续」
+    /// 反馈输入框占位符 + 提示都围绕「输入 → 回车结束 / Esc 继续」两个动作
     var feedbackPlaceholder: String { zh ? "记录完成后的反馈…" : "Write your reflection…" }
-    var feedbackHint: String { zh ? "点击输入反馈；回车提交并结束" : "Click to write; Return submits & ends" }
-    var end: String { zh ? "结束" : "End" }
-    var keepGoing: String { zh ? "继续" : "Keep going" }
-    var snooze: String { zh ? "延后" : "Snooze" }
-    var drop: String { zh ? "放弃" : "Drop" }
+    var feedbackHint: String { zh ? "回车 = 记录并结束 · Esc = 继续并重新计时" : "Return to save & end · Esc to continue & retime" }
 
     // MARK: 历史面板
 
@@ -55,10 +49,9 @@ struct L10n {
     var countdownCheckIn: String { zh ? "倒计时签到" : "COUNTDOWN CHECK-IN" }
     var presetsMinutes: String { zh ? "预设时长（分钟）" : "Presets (minutes)" }
     var defaultDuration: String { zh ? "默认时长" : "Default duration" }
-    var snoozeDuration: String { zh ? "延后时长" : "Snooze duration" }
     var autoArmNewGoals: String { zh ? "新目标自动武装" : "Auto-arm new goals" }
     var keepArmedAfterCreate: String { zh ? "创建后保持武装" : "Keep armed after creating" }
-    var escDismissCheckIn: String { zh ? "Esc / F10 关闭签到" : "Esc / F10 dismiss check-in" }
+    var escDismissCheckIn: String { zh ? "F10 关闭签到（Esc 为继续）" : "F10 dismisses check-in (Esc = continue)" }
     var canvases: String { zh ? "画布" : "CANVASES" }
     var addCanvas: String { zh ? "添加画布" : "Add canvas" }
     var appearance: String { zh ? "外观" : "APPEARANCE" }

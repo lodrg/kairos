@@ -158,9 +158,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 收起时不播内容动画：窗口整体淡出，等透明了再把 animatedIn 复位。
     /// 内容一边往下缩一边淡出会显得拖沓，而且和窗口淡出是两个时钟。
     ///
-    /// 签到未决时整个函数直接不做（除非配置里打开了 checkInEscDismisses）——这是唯一的
-    /// 收起入口（Esc / 单击 F10 / 菜单栏都走这里），挡在这一处比在每个调用点各自判断
-    /// 更不容易漏掉一条路径。
+    /// 签到未决时整个函数直接不做（除非配置里打开了 checkInEscDismisses，让 F10
+    /// 能直接关掉签到卡片）——这是唯一的收起入口（单击 F10 / 菜单栏 Show/Hide 都走这里）
     func hide() {
         let checkInBlocksHide = model.pendingCheckInID != nil && !settingsStore.settings.checkInEscDismisses
         guard isVisible, !checkInBlocksHide else { return }
@@ -221,12 +220,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isVisible else { return event }
-            // 签到卡片的快捷键 D/K/S/X 或 1/2/3/4。
-            // 必须放本地监听而不是 SwiftUI onKeyPress：签到弹出时 focusedField 被清成 nil，
-            // 焦点链里没有任何聚焦元素，挂在外层容器上的 onKeyPress 收不到任何按键。
-            // 本地监听不依赖焦点链，跟下面的 Esc / ⌘. 是同一条已验证的路径。
-            if self.handleCheckInKey(event) { return nil }
-
             if event.keyCode == 53 { // Esc
                 self.handleEscape()
                 return nil
@@ -251,39 +244,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 签到卡片的四个动作；命中返回 true（键已被消费）。字母或数字任选一种。
-    /// 反馈输入框聚焦时直接放行——那时字母数字是文字输入，不是快捷键
-    private func handleCheckInKey(_ event: NSEvent) -> Bool {
-        guard model.pendingCheckInID != nil,
-              !model.feedbackFocused,
-              let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }
-        let action: OverlayView.CheckInAction
-        switch chars {
-        case "d", "1": action = .done
-        case "k", "2": action = .keepGoing
-        case "s", "3": action = .snooze
-        case "x", "4": action = .drop
-        default: return false
-        }
-        if let id = model.pendingCheckInID {
-            overlayView?.resolveCheckIn(id: id, action: action)
-        }
-        return true
-    }
-
     private func handleEscape() {
-        // 签到未决时 Esc 一级只做「关掉签到卡片」这一件事，且要配置允许才生效——
-        // 默认不允许，这是「强制」这件事本身要求的；Snooze 和菜单栏 Quit 仍然可用，
-        // 不是真的困死用户
+        // 签到未决时 Esc = 继续这个目标并重新选时长——这是设计里的第一动作，
+        // 不是「逃跑」。反馈草稿保留，重新选完时长后继续计时
         if model.pendingCheckInID != nil {
-            guard settingsStore.settings.checkInEscDismisses else { return }
-            model.pendingCheckInID = nil
+            overlayView?.continueCheckInWithTimePick()
             return
         }
         if model.showHistory {
             model.showHistory = false
         } else if model.showSettings {
             model.showSettings = false
+        } else if model.isChoosingDuration {
+            // 时长选择中 Esc = 取消重选（目标已按原时长继续）
+            model.isChoosingDuration = false
+            model.armingTargetID = nil
         } else if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
             model.inputParentID = nil
