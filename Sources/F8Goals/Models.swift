@@ -266,6 +266,9 @@ final class OverlayModel: ObservableObject {
     /// 到期后待处理的签到；绝不能被 resetTransient 清掉——收起动画完成时会调用它，
     /// 清了就等于让签到被「收起」悄悄取消掉，等于没做强制这件事
     @Published var pendingCheckInID: UUID?
+    /// Esc 继续后正在全屏重选时长的目标；非 nil 时显示全屏时长选择（不再用输入栏底部那条
+    /// 小横条）。普通 ⌘T 武装还是走输入栏小横条（retimingGoalID == nil）
+    @Published var retimingGoalID: UUID?
     /// 签到卡片上反馈输入框的草稿；继续（keepGoing）后保留，下次到期弹卡片时还在
     @Published var checkInFeedback = ""
     /// 设置里的「历史」子面板
@@ -297,5 +300,7 @@ final class OverlayModel: ObservableObject {
         showSettings = false
         showHistory = false
         checkInFeedback = ""
+        retimingGoalID = nil
+        isChoosingDuration = false
     }
 }

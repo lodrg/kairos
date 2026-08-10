@@ -75,6 +75,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.draftMinutesIndex = 3
                 self.model.isChoosingDuration = true
             }
+        } else if CommandLine.arguments.contains("--show-retime") {
+            // 调试：直接摆出全屏重选时长界面（--show-retime <目标ID>）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                if let idx = CommandLine.arguments.firstIndex(of: "--show-retime"),
+                   CommandLine.arguments.indices.contains(idx + 1),
+                   let id = UUID(uuidString: CommandLine.arguments[idx + 1]) {
+                    self.show()
+                    self.model.retimingGoalID = id
+                    self.model.isChoosingDuration = true
+                    self.model.armingTargetID = id
+                    self.model.draftMinutesIndex = 0
+                }
+            }
         }
     }
 
@@ -265,9 +279,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else if model.showSettings {
             model.showSettings = false
         } else if model.isChoosingDuration {
-            // 时长选择中 Esc = 取消重选（目标已按原时长继续）
+            // 时长选择中 Esc = 取消（⌘T 的小横条、或全屏重选时长都算）；目标已按原时长继续
             model.isChoosingDuration = false
             model.armingTargetID = nil
+            model.retimingGoalID = nil
+            overlayView?.returnFocusToInput()
         } else if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
             model.inputParentID = nil

@@ -31,6 +31,8 @@ struct OverlayView: View {
     /// 画布名的临时提示：切换时淡入，停一下后淡出
     @State private var showCanvasName = false
     @State private var nameFlashTask: Task<Void, Never>?
+    /// 全屏重选时长卡片里「自定义时长」输入框的草稿
+    @State private var retimeCustomText = ""
 
     /// 时长预设，Off 恒在最前面，后面接配置里可编辑的分钟数列表
     private var durationOptions: [Int?] {
@@ -43,9 +45,9 @@ struct OverlayView: View {
         LayoutMetrics(scale: settingsStore.settings.textScale, restingFraction: settingsStore.settings.inputRestingFraction)
     }
 
-    /// 有没有全屏接管画面的东西开着（签到或配置面板或历史面板）
+    /// 有没有全屏接管画面的东西开着（签到或配置面板或历史面板或重选时长）
     private var isModalUp: Bool {
-        model.pendingCheckInID != nil || model.showSettings || model.showHistory
+        model.pendingCheckInID != nil || model.showSettings || model.showHistory || model.retimingGoalID != nil
     }
 
     private var l10n: L10n { L10n(language: settingsStore.settings.language) }
@@ -71,6 +73,7 @@ struct OverlayView: View {
             settingsOverlay
             historyOverlay
             checkInOverlay
+            retimePicker
         }
         .onChange(of: model.animatedIn) { _, isIn in
             if isIn {
@@ -198,6 +201,104 @@ struct OverlayView: View {
 
     // MARK: - 强制签到
 
+    /// 全屏重选时长卡片。Esc 继续后的专用界面：大块预设 + 自定义输入，整屏呈现，
+    /// 不再挤在输入栏底部那条小横条里。←/→ 和回车复用 isChoosingDuration 的既有键位；
+    /// Esc / 点卡片外 = 取消（目标已按原时长继续）
+    private var retimePicker: some View {
+        Group {
+            if let id = model.retimingGoalID, let goal = store.goals.first(where: { $0.id == id }) {
+                ZStack {
+                    Color.black.opacity(0.55)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture(perform: cancelRetime)
+
+                    VStack(spacing: 30) {
+                        Text(l10n.retimeTitle)
+                            .font(.system(size: 24, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.9))
+
+                        Text(goal.text)
+                            .font(.system(size: 44, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+                            .lineLimit(2)
+
+                        HStack(spacing: 14) {
+                            ForEach(Array(durationOptions.enumerated()), id: \.offset) { index, minutes in
+                                let active = index == model.draftMinutesIndex
+                                Text(minutes.map { "\($0)m" } ?? l10n.durationOff)
+                                    .font(.system(size: 26, weight: .semibold, design: .rounded))
+                                    .foregroundStyle(active ? .black.opacity(0.9) : .white.opacity(0.72))
+                                    .frame(width: 96, height: 78)
+                                    .background(active ? Palette.accent : Color.white.opacity(0.07),
+                                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { model.draftMinutesIndex = index }
+                            }
+                        }
+
+                        // 自定义时长：点进去输入数字回车，1–180 分钟
+                        HStack(spacing: 8) {
+                            TextField(l10n.defaultMinutesPlaceholder, text: $retimeCustomText)
+                                .font(.system(size: 20, weight: .medium, design: .rounded))
+                                .textFieldStyle(.plain)
+                                .foregroundStyle(.white)
+                                .tint(Palette.accent)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 110)
+                                .onSubmit(commitRetimeCustom)
+                            Text("m")
+                                .font(.system(size: 17, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.4))
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background {
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(Color.white.opacity(0.08))
+                                .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                        }
+
+                        Text(l10n.retimeHint)
+                            .font(.system(size: 13, weight: .regular, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.35))
+                    }
+                    .padding(.horizontal, 56)
+                    .padding(.vertical, 44)
+                    .frame(maxWidth: 780)
+                    .background {
+                        RoundedRectangle(cornerRadius: 24, style: .continuous)
+                            .fill(Color.black.opacity(0.5))
+                            .stroke(.white.opacity(0.09), lineWidth: 1)
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(Motion.reveal, value: model.retimingGoalID)
+    }
+
+    /// 全屏重选时长：自定义输入回车——直接按输入值武装，1–180 钳制
+    private func commitRetimeCustom() {
+        guard let target = model.retimingGoalID else { return }
+        let parsed = Int(retimeCustomText.trimmingCharacters(in: .whitespaces))
+            ?? (durationOptions[model.draftMinutesIndex] ?? settingsStore.settings.defaultMinutes)
+        store.setTimer(goalID: target, minutes: min(max(parsed, 1), 180))
+        model.retimingGoalID = nil
+        model.isChoosingDuration = false
+        model.armingTargetID = nil
+        focusedField = .input
+    }
+
+    /// 取消全屏重选：目标已按原时长继续，直接关掉选择界面
+    private func cancelRetime() {
+        model.retimingGoalID = nil
+        model.isChoosingDuration = false
+        model.armingTargetID = nil
+        focusedField = .input
+    }
+
     /// 签到卡片的两个动作；Enter（结束）走卡片输入框的 onSubmit，Esc（继续）走
     /// AppDelegate 的 continueCheckInWithTimePick——这里只管状态转换，不碰键盘
     enum CheckInAction { case done, keepGoing }
@@ -246,13 +347,15 @@ struct OverlayView: View {
         focusedField = .input
     }
 
-    /// Esc：继续这个目标——先按原时长重启计时，再弹时长选择让用户重选
-    /// （←/→ 选、回车确认；再按 Esc 取消重选，保持原时长）
+    /// Esc：继续这个目标——先按原时长重启计时，再弹**全屏**时长选择让用户重选
+    /// （←/→ 选、回车确认；再按 Esc 或点外面取消，保持原时长）
     func continueCheckInWithTimePick() {
         guard let id = model.pendingCheckInID else { return }
         resolveCheckIn(id: id, action: .keepGoing)
+        model.retimingGoalID = id
         model.isChoosingDuration = true
         model.armingTargetID = id
+        retimeCustomText = ""
         // 默认选中它原来的时长（在预设里时），否则第一个
         if let minutes = store.goals.first(where: { $0.id == id })?.timer?.minutes,
            let idx = durationOptions.firstIndex(where: { $0 == minutes }) {
@@ -560,6 +663,7 @@ struct OverlayView: View {
                 model.armedMinutes = minutes
             }
             model.isChoosingDuration = false
+            model.retimingGoalID = nil
             return
         }
         let text = model.inputText
@@ -704,6 +808,11 @@ struct OverlayView: View {
         }
         let next = max(0, min(ids.count - 1, idx + delta))
         model.selectedID = ids[next]
+    }
+
+    /// AppDelegate 的 handleEscape 取消时长选择后，把焦点还给输入栏
+    func returnFocusToInput() {
+        focusedField = .input
     }
 
     /// AppDelegate 本地监听把 Tab/Shift+Tab 送到这里（onKeyPress 收不到 Shift+Tab——

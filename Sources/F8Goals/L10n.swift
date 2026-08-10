@@ -30,6 +30,8 @@ struct L10n {
     // MARK: 签到卡片
 
     var timeIsUp: String { zh ? "时间到" : "Time's up" }
+    var retimeTitle: String { zh ? "重新选择时长" : "Pick a new duration" }
+    var retimeHint: String { zh ? "←/→ 选择 · 回车确认 · Esc 取消（保持原时长）" : "←/→ to pick · Return to confirm · Esc to cancel (keep the current)" }
     /// 反馈输入框占位符 + 提示都围绕「输入 → 回车结束 / Esc 继续」两个动作
     var feedbackPlaceholder: String { zh ? "记录完成后的反馈…" : "Write your reflection…" }
     var feedbackHint: String { zh ? "回车 = 记录并结束 · Esc = 继续并重新计时" : "Return to save & end · Esc to continue & retime" }
