@@ -263,6 +263,13 @@ final class GoalStore: ObservableObject {
 // MARK: - 覆盖层状态（呼出动画 / 输入 / 编辑）
 
 @MainActor
+/// 面板里正在录制的热键是哪个
+enum HotkeyTarget: String, Codable {
+    case show
+    case hide
+}
+
+@MainActor
 final class OverlayModel: ObservableObject {
     @Published var animatedIn = false
     @Published var inputText = ""
@@ -297,6 +304,10 @@ final class OverlayModel: ObservableObject {
     @Published var armedMinutes: Int?
     /// ⌘. 呼出的配置面板
     @Published var showSettings = false
+    /// 面板里正在录制哪个热键；非 nil 时本地监听把下一个键交给热键录制
+    @Published var recordingHotkey: HotkeyTarget?
+    /// 录制被拒的原因（占用/与输入冲突），面板里短暂显示
+    @Published var hotkeyRejectMessage: String?
 
     /// 收起时清空。不清的话这些状态会随 App 生命周期只增不减，
     /// 而且下次呼出时上一轮勾选过的目标、选中态会带着中间状态重新出现。
@@ -313,6 +324,8 @@ final class OverlayModel: ObservableObject {
         armingTargetID = nil
         armedMinutes = nil
         showSettings = false
+        recordingHotkey = nil
+        hotkeyRejectMessage = nil
         showHistory = false
         checkInFeedback = ""
         retimingGoalID = nil

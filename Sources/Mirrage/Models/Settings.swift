@@ -24,6 +24,15 @@ struct Settings: Codable, Equatable {
     // 语言；默认英文，保持现有界面不变
     var language: AppLanguage = .en
 
+    // 热键（kVK keyCode + Carbon 修饰键掩码；0 = 无修饰）
+    /// 呼出键。默认 F10（kVK_F10=109）。与收起键相同时保持旧语义：
+    /// 隐藏态双击呼出、可见态单击收起
+    var showHotkeyKeyCode = 109
+    var showHotkeyModifiers = 0
+    /// 收起键。默认 F10。与呼出键不同时：按一下各自生效
+    var hideHotkeyKeyCode = 109
+    var hideHotkeyModifiers = 0
+
     init() {}
 
     /// 显式声明键名：auroraEnabled 是旧版「极光背景」开关，结构体里已没有对应属性，
@@ -31,7 +40,8 @@ struct Settings: Codable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case durationPresetsMinutes, defaultMinutes, autoArmNewGoals, keepArmedAfterCreate,
              checkInEscDismisses, inputRestingFraction, textScale, language,
-             animatedBackground, auroraEnabled
+             animatedBackground, auroraEnabled,
+             showHotkeyKeyCode, showHotkeyModifiers, hideHotkeyKeyCode, hideHotkeyModifiers
     }
 
     /// 旧版 settings.json 里没有 language 字段——直接走合成解码会整个 decode 失败，
@@ -48,6 +58,10 @@ struct Settings: Codable, Equatable {
         inputRestingFraction = try c.decodeIfPresent(Double.self, forKey: .inputRestingFraction) ?? 0.58
         textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? 1.0
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .en
+        showHotkeyKeyCode = try c.decodeIfPresent(Int.self, forKey: .showHotkeyKeyCode) ?? 109
+        showHotkeyModifiers = try c.decodeIfPresent(Int.self, forKey: .showHotkeyModifiers) ?? 0
+        hideHotkeyKeyCode = try c.decodeIfPresent(Int.self, forKey: .hideHotkeyKeyCode) ?? 109
+        hideHotkeyModifiers = try c.decodeIfPresent(Int.self, forKey: .hideHotkeyModifiers) ?? 0
     }
 
     /// 手写 encode：CodingKeys 里保留了旧键 auroraEnabled（只为迁移解码用），
@@ -63,6 +77,10 @@ struct Settings: Codable, Equatable {
         try c.encode(textScale, forKey: .textScale)
         try c.encode(language, forKey: .language)
         try c.encode(animatedBackground, forKey: .animatedBackground)
+        try c.encode(showHotkeyKeyCode, forKey: .showHotkeyKeyCode)
+        try c.encode(showHotkeyModifiers, forKey: .showHotkeyModifiers)
+        try c.encode(hideHotkeyKeyCode, forKey: .hideHotkeyKeyCode)
+        try c.encode(hideHotkeyModifiers, forKey: .hideHotkeyModifiers)
     }
 }
 

@@ -24,6 +24,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var checkInScanTimer: Timer?
     /// 语言切换后重建菜单栏菜单（NSMenu 是 AppKit 的，不随 SwiftUI 自动重绘）
     private var languageCancellable: AnyCancellable?
+    /// 热键改动后重注册 Carbon 热键
+    private var hotkeyCancellable: AnyCancellable?
     /// 第一个覆盖窗口的根视图：签到的键盘动作统一走这里执行，
     /// 完成/延后/放弃的动画逻辑只有 OverlayView 里那一份实现，不在这里复制
     private var overlayView: OverlayView?
@@ -43,10 +45,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
-        HotkeyManager.shared.onPress = { [weak self] in
-            self?.handleHotkey()
+        HotkeyManager.shared.onPress = { [weak self] keyCode, modifiers in
+            self?.handleHotkey(keyCode: keyCode, modifiers: modifiers)
         }
-        HotkeyManager.shared.register()
+        hotkeyManagerRegister()
 
         // 语言切换后菜单栏菜单（AppKit 的）不会自动重绘，这里订阅重建
         languageCancellable = settingsStore.$settings
@@ -54,6 +56,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .removeDuplicates()
             .sink { [weak self] _ in
                 MainActor.assumeIsolated { self?.rebuildMenu() }
+            }
+
+        // 热键改动即时重注册（录完一个键面板里立刻生效）
+        hotkeyCancellable = settingsStore.$settings
+            .map { ($0.showHotkeyKeyCode, $0.showHotkeyModifiers, $0.hideHotkeyKeyCode, $0.hideHotkeyModifiers) }
+            .removeDuplicates { $0 == $1 }
+            .sink { [weak self] _ in
+                MainActor.assumeIsolated { self?.hotkeyManagerRegister() }
             }
 
         // 调试入口：Mirrage --show / --hide / --show-settings / --show-arming
@@ -225,18 +235,68 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 热键逻辑
 
-    private func handleHotkey() {
-        if isVisible {
-            hide() // 可见时，单击 F10 即收起
+    /// 两个热键的语义：
+    /// - 呼出键 == 收起键（默认 F10）：隐藏态双击呼出（0.45s 判定窗）、可见态单击收起
+    /// - 呼出键 != 收起键：各按一次即生效（呼出键在可见态、收起键在隐藏态 = 无操作）
+    /// 录制热键时忽略一切热键回调（录 F10 不该顺便把覆盖层弹出来/收掉）
+    private func handleHotkey(keyCode: Int, modifiers: Int) {
+        guard model.recordingHotkey == nil else { return }
+        let s = settingsStore.settings
+        let isShowKey = keyCode == s.showHotkeyKeyCode && modifiers == s.showHotkeyModifiers
+        let isHideKey = keyCode == s.hideHotkeyKeyCode && modifiers == s.hideHotkeyModifiers
+
+        if isShowKey && isHideKey {
+            if isVisible {
+                hide() // 可见时，单击即收起
+                return
+            }
+            let now = Date()
+            if now.timeIntervalSince(lastPress) < doubleTapInterval {
+                lastPress = .distantPast
+                show() // 双击呼出
+            } else {
+                lastPress = now
+            }
+        } else if isShowKey {
+            if !isVisible { show() }
+        } else if isHideKey {
+            if isVisible { hide() }
+        }
+    }
+
+    private func hotkeyManagerRegister() {
+        let s = settingsStore.settings
+        HotkeyManager.shared.register([
+            (keyCode: s.showHotkeyKeyCode, modifiers: s.showHotkeyModifiers),
+            (keyCode: s.hideHotkeyKeyCode, modifiers: s.hideHotkeyModifiers)
+        ])
+    }
+
+    /// 面板里录热键：Esc 取消；合法键写进 settings（didSet 自动 save + 订阅重注册）；
+    /// 不合法键显示原因、继续录。录制时所有键都被吃掉，避免「录 F10 时还触发其他操作」
+    private func handleHotkeyRecording(_ event: NSEvent) {
+        guard let target = model.recordingHotkey else { return }
+        let code = Int(event.keyCode)
+        let mods = HotkeyName.carbonModifiers(from: event.modifierFlags)
+        if code == 53 && mods == 0 { // Esc 取消
+            model.recordingHotkey = nil
+            model.hotkeyRejectMessage = nil
             return
         }
-        let now = Date()
-        if now.timeIntervalSince(lastPress) < doubleTapInterval {
-            lastPress = .distantPast
-            show() // 双击 F10 呼出
-        } else {
-            lastPress = now
+        guard HotkeyName.isValid(keyCode: code, modifiers: mods) else {
+            let l10n = L10n(language: settingsStore.settings.language)
+            model.hotkeyRejectMessage = mods == 0 ? l10n.hotkeyRejectTyping : l10n.hotkeyRejectTaken
+            return
         }
+        if target == .show {
+            settingsStore.settings.showHotkeyKeyCode = code
+            settingsStore.settings.showHotkeyModifiers = mods
+        } else {
+            settingsStore.settings.hideHotkeyKeyCode = code
+            settingsStore.settings.hideHotkeyModifiers = mods
+        }
+        model.recordingHotkey = nil
+        model.hotkeyRejectMessage = nil
     }
 
     // MARK: - 键盘：Esc 分层退出 + ⌘. 开合配置面板
@@ -248,6 +308,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isVisible else { return event }
+            // 热键录制模式：面板里点了「录制」后，下一个键就是新热键（Esc 取消）
+            if self.model.recordingHotkey != nil {
+                self.handleHotkeyRecording(event)
+                return nil
+            }
             if event.keyCode == 53 { // Esc
                 self.handleEscape()
                 return nil

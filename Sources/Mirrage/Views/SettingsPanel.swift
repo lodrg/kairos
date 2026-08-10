@@ -5,6 +5,7 @@ import SwiftUI
 struct SettingsPanel: View {
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var store: GoalStore
+    @ObservedObject var model: OverlayModel
     let onClose: () -> Void
     let onOpenHistory: () -> Void
 
@@ -36,6 +37,7 @@ struct SettingsPanel: View {
                 countdownSection
                 canvasSection
                 appearanceSection
+                hotkeySection
                 layoutSection
                 languageSection
                 historySection
@@ -222,6 +224,63 @@ struct SettingsPanel: View {
             sectionHeader(l10n.appearance)
             SettingsToggle(label: l10n.animatedBackground, isOn: $settingsStore.settings.animatedBackground)
         }
+    }
+
+    // MARK: - 热键
+
+    /// 录制交互：点「录制…」→ 这一行变「按任意键… Esc 取消」→ 本地监听把下一个键
+    /// 交给 handleHotkeyRecording 写进 settings（didSet 自动 save + 订阅重注册热键）。
+    /// 不合法键（普通字符键会吃字、App 已占用的组合）显示原因、继续录
+    private var hotkeySection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            sectionHeader(l10n.hotkeys)
+            hotkeyRow(label: l10n.hotkeyShow, target: .show)
+            hotkeyRow(label: l10n.hotkeyHide, target: .hide)
+            if let msg = model.hotkeyRejectMessage {
+                Text(msg)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color(red: 1.0, green: 0.55, blue: 0.55))
+            }
+            Text(l10n.hotkeyHint)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.35))
+        }
+    }
+
+    private func hotkeyRow(label: String, target: HotkeyTarget) -> some View {
+        HStack(spacing: 12) {
+            Text(label)
+                .font(.system(size: 14))
+                .foregroundStyle(.white.opacity(0.75))
+            Spacer()
+            if model.recordingHotkey == target {
+                Text(l10n.hotkeyRecording)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Palette.accent)
+            } else {
+                Text(hotkeyDisplayName(target))
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white.opacity(0.08)))
+                Button(l10n.hotkeyRecord) {
+                    model.recordingHotkey = target
+                    model.hotkeyRejectMessage = nil
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(Palette.accent)
+            }
+        }
+    }
+
+    private func hotkeyDisplayName(_ target: HotkeyTarget) -> String {
+        let s = settingsStore.settings
+        return HotkeyName.name(
+            keyCode: target == .show ? s.showHotkeyKeyCode : s.hideHotkeyKeyCode,
+            modifiers: target == .show ? s.showHotkeyModifiers : s.hideHotkeyModifiers
+        )
     }
 
     // MARK: - 布局

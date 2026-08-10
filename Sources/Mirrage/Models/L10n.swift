@@ -72,4 +72,22 @@ struct L10n {
     var menuToggle: String { zh ? "显示 / 隐藏（双击 F10）" : "Show / Hide  (double-tap F10)" }
     var menuSettings: String { zh ? "设置…（⌘. 覆盖层打开时）" : "Settings…  (⌘. while open)" }
     var menuQuit: String { zh ? "退出 Mirrage" : "Quit Mirrage" }
+
+    // MARK: 热键设置
+
+    var hotkeys: String { zh ? "热键" : "Hotkeys" }
+    var hotkeyShow: String { zh ? "呼出键" : "Show key" }
+    var hotkeyHide: String { zh ? "收起键" : "Hide key" }
+    var hotkeyRecord: String { zh ? "录制…" : "Record…" }
+    var hotkeyRecording: String { zh ? "按任意键…  Esc 取消" : "Press any key…  Esc to cancel" }
+    var hotkeyHint: String {
+        zh ? "两个键相同时：隐藏态双击呼出、可见态单击收起；分开后各按一次即生效。"
+           : "Same key: double-tap to show, single tap to hide. Different keys: one press each."
+    }
+    var hotkeyRejectTaken: String {
+        zh ? "这个组合键被 Mirrage 占用了（Esc/Tab/⌘T/⌘./⌘+Enter），换个键" : "Taken by Mirrage (Esc/Tab/⌘T/⌘./⌘+Enter) — pick another"
+    }
+    var hotkeyRejectTyping: String {
+        zh ? "普通字符键会在打字时误触，用功能键（F1–F20）或带修饰键的组合" : "Plain character keys clash with typing — use a function key or a modified combo"
+    }
 }

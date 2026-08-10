@@ -174,6 +174,7 @@ struct OverlayView: View {
                 SettingsPanel(
                     settingsStore: settingsStore,
                     store: store,
+                    model: model,
                     onClose: { model.showSettings = false },
                     onOpenHistory: {
                         model.showSettings = false
