@@ -281,6 +281,10 @@ final class OverlayModel: ObservableObject {
     @Published var feedbackFocused = false
     /// 设置里的「历史」子面板
     @Published var showHistory = false
+    /// 分层路径：进入某条目标后，它显示的是「它下面的子目标」这一层。只允许两层——
+    /// 栈里最多一条（进入的是顶层目标；子目标不能再进入）。空 = 顶层视图。
+    /// 故意不进 resetTransient——收起再呼出后保持原层级，和画布一样是导航状态
+    @Published var focusPath: [UUID] = []
     /// 正在展开时长预设选择（左右键选、回车确认）
     @Published var isChoosingDuration = false
     @Published var draftMinutesIndex = 0

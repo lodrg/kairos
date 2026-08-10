@@ -68,6 +68,8 @@ struct OverlayView: View {
                 .animation(Motion.reveal, value: isModalUp)
             canvasNameFlash
                 .opacity(isModalUp ? 0 : 1)
+            breadcrumb
+                .opacity(isModalUp ? 0 : 1)
             settingsOverlay
             historyOverlay
             checkInOverlay
@@ -170,6 +172,51 @@ struct OverlayView: View {
             guard !Task.isCancelled else { return }
             withAnimation(Motion.fade) { showCanvasName = false }
         }
+    }
+
+    /// 分层路径指示：`画布 / 目标`（最多一段——只允许两层）。画布段点一下回最上层，
+    /// 目标段是当前层。栈空（顶层）时不显示；切画布 / 签到接管时整体隐藏
+    private var breadcrumb: some View {
+        HStack(spacing: 6) {
+            Button {
+                popFocusTo(0)
+            } label: {
+                Text(store.activeCanvas.name)
+                    .foregroundStyle(.white.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            ForEach(Array(model.focusPath.enumerated()), id: \.offset) { index, id in
+                if let goal = store.goals.first(where: { $0.id == id }) {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.25))
+                    Button {
+                        popFocusTo(index + 1)
+                    } label: {
+                        Text(goal.text)
+                            .lineLimit(1)
+                            .foregroundStyle(index == model.focusPath.count - 1
+                                ? .white.opacity(0.9) : .white.opacity(0.45))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .font(.system(size: 15, weight: .medium, design: .rounded))
+        .padding(.top, 40)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .opacity(model.focusPath.isEmpty ? 0 : 1)
+        .animation(Motion.fade, value: model.focusPath.isEmpty)
+        .allowsHitTesting(!model.focusPath.isEmpty)
+    }
+
+    /// 面包屑点击跳层：保留前 keep 段路径（0 = 回顶层）
+    private func popFocusTo(_ keep: Int) {
+        while model.focusPath.count > keep {
+            model.focusPath.removeLast()
+        }
+        model.selectedID = nil
+        model.inputParentID = nil
     }
 
     private var canvasNameFlash: some View {
@@ -327,15 +374,17 @@ struct OverlayView: View {
         store.goals.filter { $0.canvasID == store.activeCanvasID }
     }
 
-    /// 顶层目标 + 紧随其后的子目标，按创建顺序；子目标永远跟在自己的父目标后面，
-    /// 不管它们在 store.goals 数组里实际的先后顺序（数组是按创建时间追加的）
+    /// 分层视图的行：进入某条目标后，「当前层」是它的子目标（栈空 = 画布顶层目标）。
+    /// 只允许两层——子目标没有子目标，所以进到子目标这一层后不再有缩进行
     private var groupedRows: [GoalRowInfo] {
         let all = canvasGoals
-        let topLevel = all.filter { $0.parentID == nil }
+        let currentLevel = model.focusPath.last == nil
+            ? all.filter { $0.parentID == nil }
+            : all.filter { $0.parentID == model.focusPath.last }
         var rows: [GoalRowInfo] = []
-        for parent in topLevel {
-            rows.append(GoalRowInfo(goal: parent, depth: 0))
-            for child in all where child.parentID == parent.id {
+        for goal in currentLevel {
+            rows.append(GoalRowInfo(goal: goal, depth: 0))
+            for child in all where child.parentID == goal.id {
                 rows.append(GoalRowInfo(goal: child, depth: 1))
             }
         }
@@ -383,6 +432,10 @@ struct OverlayView: View {
                 emptyHint
             } else {
                 ZStack(alignment: .bottomLeading) {
+                    // 正在编辑的目标的父目标——编辑子目标时高亮它，父子关系一眼可见
+                    let editingParentID = model.editingID.flatMap { id in
+                        store.goals.first(where: { $0.id == id })?.parentID
+                    }
                     ForEach(layout(shown, sizing: sizing), id: \.id) { placed in
                         GoalRow(
                             goal: placed.info.goal,
@@ -393,6 +446,7 @@ struct OverlayView: View {
                             isCompleting: model.completingIDs.contains(placed.info.goal.id),
                             isEditing: model.editingID == placed.info.goal.id,
                             isSelected: model.selectedID == placed.info.goal.id,
+                            isParentOfEditing: placed.info.goal.id == editingParentID,
                             editText: $model.editText,
                             focusedField: $focusedField,
                             onToggle: { complete(placed.info.goal) },
@@ -440,7 +494,7 @@ struct OverlayView: View {
     }
 
     private var emptyHint: some View {
-        Text(l10n.noGoalsYet)
+        Text(model.focusPath.isEmpty ? l10n.noGoalsYet : l10n.noSubgoalsYet)
             .font(.system(size: 26, weight: .regular, design: .rounded))
             .foregroundStyle(.white.opacity(0.16))
             .frame(maxWidth: .infinity, alignment: .center)
@@ -464,7 +518,7 @@ struct OverlayView: View {
                         .foregroundStyle(.white.opacity(0.32))
                         .lineLimit(1)
                         .padding(.leading, sizing.subIndent)
-                        .opacity(model.inputParentID != nil ? 1 : 0)
+                        .opacity(effectiveParentID != nil ? 1 : 0)
                 }
             }
             .frame(height: 26, alignment: .bottom)
@@ -507,8 +561,14 @@ struct OverlayView: View {
     }
 
     private var parentContextLabel: String {
-        guard let id = model.inputParentID else { return "" }
+        guard let id = effectiveParentID else { return "" }
         return store.goals.first(where: { $0.id == id })?.text ?? ""
+    }
+
+    /// 输入栏真正要挂的父目标：显式 Tab 选的优先，否则就是当前分层目标——进入某条目标后
+    /// 直接输入就是在给它加子目标，不用先 Tab
+    private var effectiveParentID: UUID? {
+        model.inputParentID ?? model.focusPath.last
     }
 
     /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理
@@ -569,7 +629,7 @@ struct OverlayView: View {
         let text = model.inputText
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         withAnimation(Motion.commit) {
-            store.add(text, parentID: model.inputParentID, minutes: model.armedMinutes)
+            store.add(text, parentID: effectiveParentID, minutes: model.armedMinutes)
         }
         model.inputText = ""
         focusedField = .input
@@ -655,26 +715,44 @@ struct OverlayView: View {
         model.selectedID = ids[next]
     }
 
-    /// Tab 双向覆盖两种输入：输入框有字时缩进待建的这条；选中已有目标时把它拆成几条。
-    /// Shift+Tab 退回顶层。已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift。
-    /// 选中优先于「最后一条顶层目标」，因为选中是用户明确指的对象
+    /// Tab 是分层操作的总入口，三种情况互斥：
+    /// 1. Shift+Tab = 退回上一层：清挂靠对象；在分层视图里同时退回顶层
+    /// 2. 输入框有字 = 把待建的这条缩进为子目标（只挂顶层目标——子目标不能当父，两层封顶）
+    /// 3. 输入框空 + 选中顶层目标 = 进入它的子目标视图（没有子目标也进——空视图直接打字就是在加）
+    ///    子目标不能再进入（只允许两层）。已验证 Shift+Tab 到这里是同一个 .tab，只是带 .shift
     private func handleTab(shift: Bool) {
         if shift {
             model.inputParentID = nil
+            if !model.focusPath.isEmpty {
+                model.focusPath.removeLast()
+                model.selectedID = nil
+            }
             return
         }
-        // 有明确选中就挂到那条，哪怕当前已经在给别的目标加子目标——选中是用户明确指的对象
-        if let selected = model.selectedID {
-            model.inputParentID = selected
+        // 分层视图里（栈非空）：输入直接挂在当前层目标下；Tab 既不缩进（会变第三层）也不下钻
+        guard model.focusPath.isEmpty else { return }
+        // 顶层视图：输入框有字 → 缩进待建的这条
+        if model.editingID == nil,
+           !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 选中的是顶层目标就用它，否则挂最后一条顶层目标（子目标不能当父）
+            let selectedIsTopLevel = model.selectedID.flatMap { id in
+                store.goals.first(where: { $0.id == id })?.parentID == nil
+            } ?? false
+            let target = selectedIsTopLevel ? model.selectedID
+                : visibleRows.last(where: { $0.depth == 0 })?.goal.id
+            if let target {
+                model.inputParentID = target
+                model.selectedID = nil
+            }
+            return
+        }
+        // 输入框空 + 选中顶层目标：进入它的子目标视图
+        if let selected = model.selectedID,
+           let goal = store.goals.first(where: { $0.id == selected }),
+           goal.parentID == nil {
+            model.focusPath.append(selected)
             model.selectedID = nil
-            return
-        }
-        // 没有选中、又已经在子目标模式里：只允许两层嵌套，没有更深的地方可去，不动。
-        // 之前这里会悄悄换成「最后一条顶层目标」，等于偷偷改了父目标
-        guard model.inputParentID == nil else { return }
-        if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let lastTopLevel = visibleRows.last(where: { $0.depth == 0 })?.goal.id {
-            model.inputParentID = lastTopLevel
+            model.inputParentID = nil
         }
     }
 }
@@ -695,6 +773,8 @@ struct GoalRow: View {
     let isCompleting: Bool
     let isEditing: Bool
     let isSelected: Bool
+    /// 正在编辑的目标是它的子目标——父目标高亮，父子关系一眼可见
+    let isParentOfEditing: Bool
     @Binding var editText: String
     var focusedField: FocusState<FocusField?>.Binding
     let onToggle: () -> Void
@@ -720,7 +800,9 @@ struct GoalRow: View {
             } else {
                 Text(goal.text)
                     .font(.system(size: font, weight: .medium, design: .rounded))
-                    .foregroundStyle(.white.opacity(depth == 0 ? 0.92 : 0.72))
+                    .foregroundStyle(isParentOfEditing
+                        ? Palette.accent.opacity(0.9)
+                        : .white.opacity(depth == 0 ? 0.92 : 0.72))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .contentShape(Rectangle())
@@ -736,13 +818,14 @@ struct GoalRow: View {
         .padding(.horizontal, 22)
         .padding(.leading, depth == 0 ? 0 : sizing.subIndent)
         .frame(height: rowHeight)
-        // 选中标记：左边距里一道细竖线，不是描边框——避免整行套一个明显的框体
+        // 选中标记：左边距里一道细竖线，不是描边框——避免整行套一个明显的框体。
+        // 父目标高亮复用同一条竖线（编辑子目标时亮起）
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Palette.accent.opacity(0.6))
+                .fill(Palette.accent.opacity(isParentOfEditing ? 0.5 : 0.6))
                 .frame(width: 3, height: rowHeight * 0.4)
                 .padding(.leading, 6)
-                .opacity(isSelected ? 1 : 0)
+                .opacity(isSelected || isParentOfEditing ? 1 : 0)
         }
         .offset(y: -offsetFromBottom)
         .opacity(isCompleting ? 0 : (revealed ? 1 : 0))
