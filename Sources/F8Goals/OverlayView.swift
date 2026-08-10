@@ -43,9 +43,9 @@ struct OverlayView: View {
         LayoutMetrics(scale: settingsStore.settings.textScale, restingFraction: settingsStore.settings.inputRestingFraction)
     }
 
-    /// 有没有全屏接管画面的东西开着（签到或配置面板）
+    /// 有没有全屏接管画面的东西开着（签到或配置面板或历史面板）
     private var isModalUp: Bool {
-        model.pendingCheckInID != nil || model.showSettings
+        model.pendingCheckInID != nil || model.showSettings || model.showHistory
     }
 
     private var l10n: L10n { L10n(language: settingsStore.settings.language) }
@@ -69,6 +69,7 @@ struct OverlayView: View {
             canvasNameFlash
                 .opacity(isModalUp ? 0 : 1)
             settingsOverlay
+            historyOverlay
             checkInOverlay
         }
         .onChange(of: model.animatedIn) { _, isIn in
@@ -186,11 +187,31 @@ struct OverlayView: View {
     private var settingsOverlay: some View {
         Group {
             if model.showSettings {
-                SettingsPanel(settingsStore: settingsStore, store: store, onClose: { model.showSettings = false })
-                    .transition(.opacity)
+                SettingsPanel(
+                    settingsStore: settingsStore,
+                    store: store,
+                    onClose: { model.showSettings = false },
+                    onOpenHistory: {
+                        model.showSettings = false
+                        model.showHistory = true
+                    }
+                )
+                .transition(.opacity)
             }
         }
         .animation(Motion.reveal, value: model.showSettings)
+    }
+
+    // MARK: - 历史子面板（设置 → 历史）
+
+    private var historyOverlay: some View {
+        Group {
+            if model.showHistory {
+                HistoryPanel(store: store, l10n: l10n, onClose: { model.showHistory = false })
+                    .transition(.opacity)
+            }
+        }
+        .animation(Motion.reveal, value: model.showHistory)
     }
 
     // MARK: - 强制签到
@@ -211,7 +232,10 @@ struct OverlayView: View {
                     CheckInView(
                         goal: goal,
                         l10n: l10n,
-                        onDone: { resolveCheckIn(id: id, action: .done) },
+                        feedbackText: $model.checkInFeedback,
+                        feedbackFocused: $model.feedbackFocused,
+                        onSubmitFeedback: { resolveCheckIn(id: id, action: .done) },
+                        onEnd: { resolveCheckIn(id: id, action: .done) },
                         onKeepGoing: { resolveCheckIn(id: id, action: .keepGoing) },
                         onSnooze: { resolveCheckIn(id: id, action: .snooze) },
                         onDrop: { resolveCheckIn(id: id, action: .drop) }
@@ -231,10 +255,13 @@ struct OverlayView: View {
         // 先清掉签到态再执行动作：卡片立即开始淡出，且 complete(goal) 不会因为
         // 「签到还未决」被挡住（它本身没设这个 guard，但顺序对了就不用纠结这件事）
         model.pendingCheckInID = nil
+        model.feedbackFocused = false
         switch action {
         case .done:
+            saveFeedback(goalID: id) // 反馈随完成一起存进 goals.json
             complete(goal)
         case .keepGoing:
+            saveFeedback(goalID: id) // 继续也保留反馈作为笔记
             if let minutes = goal.timer?.minutes {
                 store.setTimer(goalID: id, minutes: minutes)
             }
@@ -244,6 +271,13 @@ struct OverlayView: View {
             store.update(id: id, text: "")
         }
         focusedField = .input
+    }
+
+    /// 把反馈草稿存到目标上；Snooze 不清草稿（卡片重新弹出时输入还在）
+    private func saveFeedback(goalID: UUID) {
+        let text = model.checkInFeedback
+        model.checkInFeedback = ""
+        store.setFeedback(id: goalID, feedback: text)
     }
 
     /// 目标少时输入栏停在 `sizing.inputRestingFraction` 那个高度（配置面板可调）；

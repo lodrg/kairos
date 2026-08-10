@@ -6,6 +6,7 @@ struct SettingsPanel: View {
     @ObservedObject var settingsStore: SettingsStore
     @ObservedObject var store: GoalStore
     let onClose: () -> Void
+    let onOpenHistory: () -> Void
 
     @State private var presetsText = ""
     @State private var newCanvasName = ""
@@ -36,6 +37,7 @@ struct SettingsPanel: View {
                 appearanceSection
                 layoutSection
                 languageSection
+                historySection
 
                 Text(l10n.escToClose)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
@@ -209,6 +211,35 @@ struct SettingsPanel: View {
             .pickerStyle(.segmented)
             .labelsHidden()
             .frame(maxWidth: 260)
+        }
+    }
+
+    // MARK: - 历史
+
+    /// 曾经的目标和签到反馈：跳到独立的历史子面板（数据就是 goals.json 里已勾选的目标）
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader(l10n.history)
+            Button(action: onOpenHistory) {
+                HStack(spacing: 9) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 14))
+                    Text(l10n.viewHistory)
+                        .font(.system(size: 17, weight: .regular, design: .rounded))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                }
+            }
+            .buttonStyle(.plain)
         }
     }
 

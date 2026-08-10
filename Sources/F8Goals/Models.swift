@@ -30,6 +30,8 @@ struct Goal: Identifiable, Codable, Equatable {
     /// nil = 顶层目标；非空 = 子目标（只允许一层），到后面阶段才接上产生它的交互
     var parentID: UUID? = nil
     var timer: GoalTimer? = nil
+    /// 倒计时签到结束时用户写的反馈（可选；结束时保存，随目标留存在 goals.json）
+    var feedback: String? = nil
 }
 
 /// 磁盘格式 v2：画布 + 目标 + 当前画布，取代 v1 的裸数组 [Goal]
@@ -175,6 +177,14 @@ final class GoalStore: ObservableObject {
         save()
     }
 
+    /// 保存签到反馈；空文本 = 清掉已有反馈。反馈随目标留在 goals.json，历史面板从这里读
+    func setFeedback(id: UUID, feedback: String) {
+        guard let index = goals.firstIndex(where: { $0.id == id }) else { return }
+        let trimmed = feedback.trimmingCharacters(in: .whitespacesAndNewlines)
+        goals[index].feedback = trimmed.isEmpty ? nil : trimmed
+        save()
+    }
+
     // MARK: - 画布
 
     /// 环形切换；delta = 1 下一个，-1 上一个。只有一块画布时是无操作
@@ -242,6 +252,13 @@ final class OverlayModel: ObservableObject {
     /// 到期后待处理的签到；绝不能被 resetTransient 清掉——收起动画完成时会调用它，
     /// 清了就等于让签到被「收起」悄悄取消掉，等于没做强制这件事
     @Published var pendingCheckInID: UUID?
+    /// 签到卡片上反馈输入框的草稿；Snooze 后保留，重新弹出时还在
+    @Published var checkInFeedback = ""
+    /// 反馈输入框是否正在聚焦——聚焦时 D/K/S/X、1-4 这些键是文字输入，
+    /// 快捷键要全部让位（AppDelegate 本地监听靠这个判断）
+    @Published var feedbackFocused = false
+    /// 设置里的「历史」子面板
+    @Published var showHistory = false
     /// 正在展开时长预设选择（左右键选、回车确认）
     @Published var isChoosingDuration = false
     @Published var draftMinutesIndex = 0
@@ -267,5 +284,8 @@ final class OverlayModel: ObservableObject {
         armingTargetID = nil
         armedMinutes = nil
         showSettings = false
+        showHistory = false
+        checkInFeedback = ""
+        feedbackFocused = false
     }
 }

@@ -32,10 +32,21 @@ struct L10n {
     var timeIsUp: String { zh ? "时间到" : "Time's up" }
     var snoozedOnce: String { zh ? "已延后 1 次" : "Snoozed once" }
     func snoozedCount(_ n: Int) -> String { zh ? "已延后 \(n) 次" : "Snoozed \(n) times" }
-    var done: String { zh ? "完成" : "Done" }
+    /// 反馈输入框占位符 + 主按钮都围绕「记录反馈 → 结束/继续」
+    var feedbackPlaceholder: String { zh ? "记录完成后的反馈…" : "Write your reflection…" }
+    var feedbackHint: String { zh ? "点击输入反馈；回车提交并结束" : "Click to write; Return submits & ends" }
+    var end: String { zh ? "结束" : "End" }
     var keepGoing: String { zh ? "继续" : "Keep going" }
     var snooze: String { zh ? "延后" : "Snooze" }
     var drop: String { zh ? "放弃" : "Drop" }
+
+    // MARK: 历史面板
+
+    var history: String { zh ? "历史" : "HISTORY" }
+    var viewHistory: String { zh ? "查看曾经的目标与反馈" : "View past goals & reflections" }
+    var historyTitle: String { zh ? "历史目标与反馈" : "History" }
+    var historyEmpty: String { zh ? "还没有已完成的目标" : "No completed goals yet" }
+    var back: String { zh ? "返回" : "Back" }
 
     // MARK: 设置面板
 

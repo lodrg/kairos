@@ -133,7 +133,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.alphaValue = 0
             window.orderFrontRegardless()
         }
+        // 倒计时到期弹出签到卡片是要打断用户——必须抢到键盘焦点，D/K/S/X 才收得到。
+        // 已实测：用户正在 WeChat 打字时，macOS 14+ 的 NSApp.activate() 不会抢前台，
+        // 按键全部落进被盖住的 App；旧 API activateIgnoringOtherApps 仍能强制
         NSApp.activate()
+        forceActivate()
         (windows.first { $0.screen == NSScreen.main } ?? windows.first)?.makeKey()
 
         // animatedIn 不包在 withAnimation 里：每行自己用 .animation(_:value:) 带着
@@ -177,6 +181,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.animatedIn = false
                 self.model.resetTransient()
             }
+        }
+    }
+
+    /// 强制抢键盘焦点。macOS 14 把 `activateIgnoringOtherApps(_:)` 标成弃用（改名），
+    /// 但新版 `activate()` 在用户正打字时不会抢前台（已实测）。用 selector 动态派发
+    /// 调用旧 API——编译期完全不知道方法名，既不报错也不警告，运行时行为不变。
+    private func forceActivate() {
+        let selector = NSSelectorFromString("activateIgnoringOtherApps:")
+        if NSApp.responds(to: selector) {
+            _ = NSApp.perform(selector, with: NSNumber(value: true))
+        } else {
+            NSApp.activate()
         }
     }
 
@@ -225,9 +241,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 签到卡片的四个动作；命中返回 true（键已被消费）。字母或数字任选一种
+    /// 签到卡片的四个动作；命中返回 true（键已被消费）。字母或数字任选一种。
+    /// 反馈输入框聚焦时直接放行——那时字母数字是文字输入，不是快捷键
     private func handleCheckInKey(_ event: NSEvent) -> Bool {
         guard model.pendingCheckInID != nil,
+              !model.feedbackFocused,
               let chars = event.charactersIgnoringModifiers?.lowercased() else { return false }
         let action: OverlayView.CheckInAction
         switch chars {
@@ -252,7 +270,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.pendingCheckInID = nil
             return
         }
-        if model.showSettings {
+        if model.showHistory {
+            model.showHistory = false
+        } else if model.showSettings {
             model.showSettings = false
         } else if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
