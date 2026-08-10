@@ -76,18 +76,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.isChoosingDuration = true
             }
         }
-        // --focus 独立于上面的 else-if 链：可与 --show 同时用（--show --focus <ID>），
-        // 直接落在某条目标的分层视图里（验证用）
-        if CommandLine.arguments.contains("--focus"),
-           let idx = CommandLine.arguments.firstIndex(of: "--focus"),
-           CommandLine.arguments.indices.contains(idx + 1),
-           let focusID = UUID(uuidString: CommandLine.arguments[idx + 1].uppercased()) {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-                guard let self else { return }
-                self.model.focusPath = [focusID]
-                self.show()
-            }
-        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
@@ -286,11 +274,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.showHistory = false
         } else if model.showSettings {
             model.showSettings = false
-        } else if !model.focusPath.isEmpty {
-            // 分层视图里 Esc 先退回顶层（和 Shift+Tab 一样）；选中等残留状态跟着一起清
-            model.focusPath.removeLast()
-            model.selectedID = nil
-            model.inputParentID = nil
         } else if model.selectedID != nil || model.inputParentID != nil {
             model.selectedID = nil
             model.inputParentID = nil
@@ -326,8 +309,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if store.activeCanvasID != next.canvasID {
             store.activeCanvasID = next.canvasID
-            // 目标在别的画布——退回顶层，避免分层路径引用另一个画布的目标
-            model.focusPath.removeAll()
             store.save()
         }
         // 到期时如果正在编辑，先落盘，不吞掉没保存的修改

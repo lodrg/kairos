@@ -24,7 +24,6 @@ struct L10n {
     // MARK: 主界面
 
     var noGoalsYet: String { zh ? "还没有目标" : "No goals yet" }
-    var noSubgoalsYet: String { zh ? "还没有子目标，Shift+Tab 退回" : "No sub-goals yet — Shift+Tab to go back" }
     var newGoalPlaceholder: String { zh ? "新目标，回车创建" : "New goal" }
     var durationOff: String { zh ? "关" : "Off" }
 
