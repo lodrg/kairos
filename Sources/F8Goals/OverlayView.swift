@@ -621,10 +621,9 @@ struct OverlayView: View {
             return
         }
 
-        // 完成：选中光标别停在会被淡出退休的目标上——挤到列表里下一条可见目标
-        // （顺序上紧随其后；没有就前一条；都没有就清空）。这样勾掉一条后光标总在
-        // 下一行等着，连续回车能一路勾下去
-        model.selectedID = nextVisibleID(after: goal.id)
+        // 完成：选中光标别停在会被淡出退休的目标上——挤到**上一条**可见目标
+        // （它原地不动，光标不会跳；没有上一条才用下一条）。撤销完成不动光标
+        model.selectedID = fallbackSelectionID(after: goal.id)
 
         store.toggle(goal.id)
         model.completingIDs.insert(goal.id)
@@ -641,14 +640,14 @@ struct OverlayView: View {
 
     // MARK: - 键盘：选中 + 子目标
 
-    /// 目标完成退场后选中光标的落点：列表顺序上紧随其后的一条（更新的、更靠近输入栏）；
-    /// 没有就前一条；都没有就清空（列表空了）。
+    /// 目标完成退场后选中光标的落点：优先**上一条**（列表顺序上更靠上、更旧的那条）——
+    /// 它在行位移中原地不动，光标不会跳；没有上一条才落到下一条；都没有就清空。
     /// 注意要在目标 retire 之前调用——那时它还在 visibleRows 里，能算出它的位置
-    private func nextVisibleID(after id: UUID) -> UUID? {
+    private func fallbackSelectionID(after id: UUID) -> UUID? {
         let ids = visibleRows.map(\.goal.id)
         guard let idx = ids.firstIndex(of: id) else { return nil }
-        if idx + 1 < ids.count { return ids[idx + 1] }
         if idx > 0 { return ids[idx - 1] }
+        if idx + 1 < ids.count { return ids[idx + 1] }
         return nil
     }
 
