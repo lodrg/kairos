@@ -5,15 +5,15 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>zh_CN</string>
     <key>CFBundleExecutable</key>
-    <string>F8Goals</string>
+    <string>Mirrage</string>
     <key>CFBundleIdentifier</key>
-    <string>local.f8goals.F8Goals</string>
+    <string>local.mirrage.Mirrage</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>F8Goals</string>
+    <string>Mirrage</string>
     <key>CFBundleDisplayName</key>
-    <string>F8Goals</string>
+    <string>Mirrage</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>

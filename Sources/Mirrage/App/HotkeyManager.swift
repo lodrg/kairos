@@ -33,7 +33,7 @@ final class HotkeyManager {
             &handlerRef
         )
         if installStatus != noErr {
-            NSLog("F8Goals: InstallEventHandler failed \(installStatus)")
+            NSLog("Mirrage: InstallEventHandler failed \(installStatus)")
         }
 
         let hotKeyID = EventHotKeyID(signature: hotKeySignature, id: 1)
@@ -42,7 +42,7 @@ final class HotkeyManager {
             GetApplicationEventTarget(), 0, &hotKeyRef
         )
         if regStatus != noErr {
-            NSLog("F8Goals: RegisterEventHotKey failed \(regStatus)")
+            NSLog("Mirrage: RegisterEventHotKey failed \(regStatus)")
         }
     }
 }

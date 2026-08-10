@@ -71,5 +71,5 @@ struct L10n {
 
     var menuToggle: String { zh ? "显示 / 隐藏（双击 F10）" : "Show / Hide  (double-tap F10)" }
     var menuSettings: String { zh ? "设置…（⌘. 覆盖层打开时）" : "Settings…  (⌘. while open)" }
-    var menuQuit: String { zh ? "退出 F8Goals" : "Quit F8Goals" }
+    var menuQuit: String { zh ? "退出 Mirrage" : "Quit Mirrage" }
 }

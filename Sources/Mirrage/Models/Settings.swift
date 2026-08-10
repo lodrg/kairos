@@ -73,9 +73,7 @@ final class SettingsStore: ObservableObject {
     private let fileURL: URL
 
     init() {
-        let dir = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("F8Goals", isDirectory: true)
+        let dir = AppData.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("settings.json")
         load()

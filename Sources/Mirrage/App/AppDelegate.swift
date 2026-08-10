@@ -56,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainActor.assumeIsolated { self?.rebuildMenu() }
             }
 
-        // 调试入口：F8Goals --show / --hide / --show-settings / --show-arming
+        // 调试入口：Mirrage --show / --hide / --show-settings / --show-arming
         // 后两个是给「只能用键盘到达的状态」留的口子：远程或没有辅助功能权限时，
         // 没法真的按 ⌘. / ⌘T，只能靠启动参数把那个状态摆出来看一眼
         if CommandLine.arguments.contains("--show") {
@@ -350,7 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let button = item.button {
-            button.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "F8Goals")
+            button.image = NSImage(systemSymbolName: "checklist", accessibilityDescription: "Mirrage")
         }
         statusItem = item
         rebuildMenu()

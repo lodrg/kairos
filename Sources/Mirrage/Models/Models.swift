@@ -54,6 +54,23 @@ private struct LegacyGoalV1: Codable {
 
 // MARK: - 持久化
 
+/// 数据目录：~/Library/Application Support/Mirrage。
+/// 改名自 F8Goals——首次启动时若旧目录（F8Goals）还在则整体搬过来，一次性。
+/// 两个 store 的 init 都会调用（幂等：新目录存在就不再搬），先到先搬
+enum AppData {
+    static var directory: URL {
+        let base = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let newDir = base.appendingPathComponent("Mirrage", isDirectory: true)
+        let oldDir = base.appendingPathComponent("F8Goals", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: newDir.path),
+           FileManager.default.fileExists(atPath: oldDir.path) {
+            try? FileManager.default.moveItem(at: oldDir, to: newDir)
+        }
+        return newDir
+    }
+}
+
 @MainActor
 final class GoalStore: ObservableObject {
     @Published var goals: [Goal] = []
@@ -68,9 +85,7 @@ final class GoalStore: ObservableObject {
     }
 
     init() {
-        let dir = FileManager.default
-            .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-            .appendingPathComponent("F8Goals", isDirectory: true)
+        let dir = AppData.directory
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         fileURL = dir.appendingPathComponent("goals.json")
         legacyBackupURL = dir.appendingPathComponent("goals.v1.json")
