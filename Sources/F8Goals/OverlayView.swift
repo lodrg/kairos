@@ -384,10 +384,10 @@ struct OverlayView: View {
                 emptyHint
             } else {
                 ZStack(alignment: .bottomLeading) {
-                    // 正在编辑的目标的父目标——编辑子目标时高亮它，父子关系一眼可见
-                    let editingParentID = model.editingID.flatMap { id in
+                    // 高亮父目标：正在编辑的子目标的父，或输入栏正挂靠着的父（输入子目标时）
+                    let highlightedParentID = model.editingID.flatMap { id in
                         store.goals.first(where: { $0.id == id })?.parentID
-                    }
+                    } ?? model.inputParentID
                     ForEach(layout(shown, sizing: sizing), id: \.id) { placed in
                         GoalRow(
                             goal: placed.info.goal,
@@ -398,7 +398,7 @@ struct OverlayView: View {
                             isCompleting: model.completingIDs.contains(placed.info.goal.id),
                             isEditing: model.editingID == placed.info.goal.id,
                             isSelected: model.selectedID == placed.info.goal.id,
-                            isParentOfEditing: placed.info.goal.id == editingParentID,
+                            isParentHighlighted: placed.info.goal.id == highlightedParentID,
                             editText: $model.editText,
                             focusedField: $focusedField,
                             onToggle: { complete(placed.info.goal) },
@@ -573,7 +573,15 @@ struct OverlayView: View {
             return
         }
         let text = model.inputText
-        guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        // 输入框空 + 有选中：回车 = 勾掉选中的目标（和点方块一样：淡出，淡出中可撤销）
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let id = model.selectedID,
+               let goal = store.goals.first(where: { $0.id == id }) {
+                model.selectedID = nil
+                complete(goal)
+            }
+            return
+        }
         withAnimation(Motion.commit) {
             store.add(text, parentID: model.inputParentID, minutes: model.armedMinutes)
         }
@@ -704,8 +712,8 @@ struct GoalRow: View {
     let isCompleting: Bool
     let isEditing: Bool
     let isSelected: Bool
-    /// 正在编辑的目标是它的子目标——父目标高亮，父子关系一眼可见
-    let isParentOfEditing: Bool
+    /// 高亮父目标：正在编辑的子目标的父，或输入栏正挂靠着的父（输入子目标时）
+    let isParentHighlighted: Bool
     @Binding var editText: String
     var focusedField: FocusState<FocusField?>.Binding
     let onToggle: () -> Void
@@ -731,7 +739,7 @@ struct GoalRow: View {
             } else {
                 Text(goal.text)
                     .font(.system(size: font, weight: .medium, design: .rounded))
-                    .foregroundStyle(isParentOfEditing
+                    .foregroundStyle(isParentHighlighted
                         ? Palette.accent.opacity(0.9)
                         : .white.opacity(depth == 0 ? 0.92 : 0.72))
                     .lineLimit(1)
@@ -750,13 +758,13 @@ struct GoalRow: View {
         .padding(.leading, depth == 0 ? 0 : sizing.subIndent)
         .frame(height: rowHeight)
         // 选中标记：左边距里一道细竖线，不是描边框——避免整行套一个明显的框体。
-        // 父目标高亮复用同一条竖线（编辑子目标时亮起）
+        // 父目标高亮复用同一条竖线（编辑子目标 / 输入子目标时亮起）
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Palette.accent.opacity(isParentOfEditing ? 0.5 : 0.6))
+                .fill(Palette.accent.opacity(isParentHighlighted ? 0.5 : 0.6))
                 .frame(width: 3, height: rowHeight * 0.4)
                 .padding(.leading, 6)
-                .opacity(isSelected || isParentOfEditing ? 1 : 0)
+                .opacity(isSelected || isParentHighlighted ? 1 : 0)
         }
         .offset(y: -offsetFromBottom)
         .opacity(isCompleting ? 0 : (revealed ? 1 : 0))
