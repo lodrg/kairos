@@ -495,11 +495,14 @@ struct OverlayView: View {
         .animation(Motion.commit, value: model.isChoosingDuration)
     }
 
-    /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理
+    /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理。
+    /// 预设里等于「默认时长」的那块右上角有个小点——⌘+Enter 用的就是这个值，一眼可见；
+    /// 配置里改默认值，小点实时跟着换位置
     private var durationPicker: some View {
         HStack(spacing: 8) {
             ForEach(Array(durationOptions.enumerated()), id: \.offset) { index, minutes in
                 let active = index == model.draftMinutesIndex
+                let isDefault = minutes == settingsStore.settings.defaultMinutes
                 Text(minutes.map { "\($0)m" } ?? l10n.durationOff)
                     .font(.system(size: 14, weight: .medium, design: .rounded))
                     .foregroundStyle(active ? .black.opacity(0.85) : .white.opacity(0.4))
@@ -507,6 +510,15 @@ struct OverlayView: View {
                     .padding(.vertical, 3)
                     .background(active ? Palette.accent : Color.white.opacity(0.06),
                                 in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
+                        if isDefault {
+                            Circle()
+                                .fill(Palette.accent)
+                                .frame(width: 4, height: 4)
+                                .padding(1.5)
+                        }
+                    }
+                    .help(l10n.durationDefaultHint)
             }
         }
         .transition(.opacity)
