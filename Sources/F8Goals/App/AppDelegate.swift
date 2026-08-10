@@ -113,9 +113,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             window.isReleasedWhenClosed = false
             window.collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle, .fullScreenAuxiliary]
             window.alphaValue = 0
-            let content = OverlayView(store: store, model: model, settingsStore: settingsStore)
-            if overlayView == nil { overlayView = content }
-            window.contentView = NSHostingView(rootView: content)
+            // 不在这里挂 contentView：启动即隐藏时图层树（~33MB IOSurface）会白挂着，
+            // 等首次 show() 再懒重建——常驻隐藏态的内存最小化
             windows.append(window)
         }
     }
@@ -144,6 +143,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isVisible = true
 
         for window in windows {
+            // 注意：contentView 的 getter 会惰性自动创建空 NSView，永远 != nil——
+            // 必须用「是不是我们的 NSHostingView」来判断是否已构建
+            if !(window.contentView is NSHostingView<OverlayView>) {
+                // 收起时释放过图层树（见 hide()）——呼出时重建，overlayView 必须指向新实例
+                let content = OverlayView(store: store, model: model, settingsStore: settingsStore)
+                overlayView = content
+                window.contentView = NSHostingView(rootView: content)
+            }
             window.alphaValue = 0
             window.orderFrontRegardless()
         }
@@ -190,7 +197,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }) { [weak self] in
             guard let self else { return }
             MainActor.assumeIsolated {
-                for window in self.windows { window.orderOut(nil) }
+                for window in self.windows {
+                    window.orderOut(nil)
+                    // 释放整棵图层树（全屏窗口的 IOSurface 后备存储约 33MB）——
+                    // 常驻隐藏态是绝大多数时间，内存减半；呼出时 show() 懒重建。
+                    // 图层树是窗口唯一的内存大头，不释放就白挂着
+                    window.contentView = nil
+                }
+                self.overlayView = nil
                 self.model.animatedIn = false
                 self.model.resetTransient()
             }

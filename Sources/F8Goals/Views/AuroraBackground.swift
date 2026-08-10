@@ -14,8 +14,10 @@ struct AuroraBackground: View {
 
     var body: some View {
         ZStack {
-            // 时间线只在「动态背景」开着时才跑：关掉时退回纯静态渐变，CPU 归零
-            TimelineView(.animation(minimumInterval: 1.0 / 15.0,
+            // 时间线只在「动态背景」开着时才跑：关掉时退回纯静态渐变，CPU 归零。
+            // 帧率 10fps：漂移正弦周期 20-30s、呼吸 7s，全是慢变化——15fps 是 2-4 倍
+            // 冗余，10fps 肉眼无差，CPU 少 1/3
+            TimelineView(.animation(minimumInterval: 1.0 / 10.0,
                                     paused: !active || !animated)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
 
