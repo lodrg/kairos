@@ -231,6 +231,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.handleEscape()
                 return nil
             }
+            // Tab（48）：Shift+Tab = 退回顶层输入；Tab = 挂靠子目标。
+            // 之前挂在 SwiftUI onKeyPress 上——Tab 能到，但 Shift+Tab 会被 AppKit 的
+            // 焦点循环先吃掉（实测用户按 Shift+Tab 没反应，Esc 反而生效）。
+            // 本地监听在 AppKit 之前看到所有键，和 Esc 是同一条已验证的路径。
+            // 签到卡片开着时放行（Tab 聚焦反馈输入框）；配置面板开着时放行（表单跳字段）
+            if event.keyCode == 48 {
+                if self.model.pendingCheckInID != nil || self.model.showSettings { return event }
+                self.overlayView?.handleTabRequest(shift: event.modifierFlags.contains(.shift))
+                return nil
+            }
             // ⌘.（keyCode 47 = period）；签到未决时不让它插队
             if event.keyCode == 47, event.modifierFlags.contains(.command),
                self.model.pendingCheckInID == nil {

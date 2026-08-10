@@ -129,17 +129,9 @@ struct OverlayView: View {
             moveSelection(by: press.key == .downArrow ? 1 : -1)
             return .handled
         }
-        // Tab 一律吃掉，绝不返回 .ignored——放行的话会掉进 AppKit 的焦点循环，
-        // 把光标从输入框抢到旁边的表盘按钮上，于是既打不了字、按空格还会误触计时器。
-        // 已实测：Button 默认可聚焦 + 返回 .ignored，Tab 之后 firstResponder 就变成
-        // KeyViewProxy 而不再是输入框。配置面板开着时例外，放行让表单里的 Tab 正常跳字段。
-        .onKeyPress(keys: [.tab]) { press in
-            guard model.animatedIn, model.pendingCheckInID == nil, !model.showSettings else { return .ignored }
-            if model.editingID == nil {
-                handleTab(shift: press.modifiers.contains(.shift))
-            }
-            return .handled
-        }
+        // Tab 不在这里处理：onKeyPress 收不到 Shift+Tab（AppKit 焦点循环先吃掉）。
+        // 它跟 Esc 一样放在 AppDelegate 的 NSEvent 本地监听里（那条路已验证能用），
+        // 由 handleTabRequest 转发到 handleTab。
         // 签到卡片的四个动作：字母和数字任选一种，签到没弹出时完全不拦截任何键
         .onKeyPress { press in
             guard let id = model.pendingCheckInID else { return .ignored }
@@ -455,22 +447,16 @@ struct OverlayView: View {
             .animation(Motion.reveal, value: model.animatedIn)
     }
 
-    /// 固定切两段：上面 26pt 是「正在给谁加子目标 / 正在选时长」的提示位，不管显不显示
-    /// 都占着；下面 inputBarHeight-26 是真正的输入行，在这段里居中——这样输入行的竖直
-    /// 位置永远不变，不会因为提示行的显隐而上下窜动
+    /// 固定切两段：上面 26pt 是「正在选时长」的提示位，不管显不显示都占着；
+    /// 下面 inputBarHeight-26 是真正的输入行，在这段里居中——这样输入行的竖直
+    /// 位置永远不变，不会因为提示行的显隐而上下窜动。
+    /// 不再显示「正在给谁加子目标」的文字——父目标高亮已经足够显式
     private var inputBar: some View {
         let sizing = sizing
         return VStack(alignment: .leading, spacing: 0) {
             Group {
                 if model.isChoosingDuration {
                     durationPicker
-                } else {
-                    Text(parentContextLabel)
-                        .font(.system(size: 17, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.32))
-                        .lineLimit(1)
-                        .padding(.leading, sizing.subIndent)
-                        .opacity(model.inputParentID != nil ? 1 : 0)
                 }
             }
             .frame(height: 26, alignment: .bottom)
@@ -510,11 +496,6 @@ struct OverlayView: View {
         .animation(Motion.reveal, value: model.animatedIn)
         .animation(Motion.commit, value: model.inputParentID)
         .animation(Motion.commit, value: model.isChoosingDuration)
-    }
-
-    private var parentContextLabel: String {
-        guard let id = model.inputParentID else { return "" }
-        return store.goals.first(where: { $0.id == id })?.text ?? ""
     }
 
     /// 时长预设一排小方块，当前选中高亮；左右键在 body 里的 onKeyPress 处理
@@ -669,10 +650,19 @@ struct OverlayView: View {
         model.selectedID = ids[next]
     }
 
+    /// AppDelegate 本地监听把 Tab/Shift+Tab 送到这里（onKeyPress 收不到 Shift+Tab——
+    /// AppKit 焦点循环先吃掉）。守卫与原来一致：签到/配置面板/编辑中不处理。
+    /// 这里吃掉 Tab 而不返回 .ignored 很关键：放行会掉进 AppKit 焦点循环，
+    /// 把光标从输入框抢到旁边的表盘按钮上
+    func handleTabRequest(shift: Bool) {
+        guard model.animatedIn, model.pendingCheckInID == nil, !model.showSettings,
+              model.editingID == nil else { return }
+        handleTab(shift: shift)
+    }
+
     /// Tab 覆盖两种输入，只允许两层（子目标不能当父）：
     /// 1. Shift+Tab = 退回顶层输入（清挂靠对象）
     /// 2. 输入框有字（或选中顶层目标）= 把待建的这条缩进为子目标，挂到那个顶层目标下面
-    /// 已验证 Shift+Tab 到这里是同一个 .tab，只是 modifiers 带 .shift
     private func handleTab(shift: Bool) {
         if shift {
             model.inputParentID = nil
