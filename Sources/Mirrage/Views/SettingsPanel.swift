@@ -352,7 +352,7 @@ struct SettingsPanel: View {
 
     // MARK: - 帮助
 
-    /// 「重播首次引导」：点一下面板关闭、立刻摆出引导卡。只这一次——
+    /// 「重播引导」：就是设置里的一个普通按钮——点一下面板关闭、立刻摆出引导卡。
     /// onboardingSeen 保持已看过，退出引导后下次启动不会再自动弹
     private var helpSection: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -361,23 +361,15 @@ struct SettingsPanel: View {
                 model.showSettings = false
                 model.showOnboarding = true
             } label: {
-                HStack(spacing: 9) {
-                    Image(systemName: "questionmark.circle")
-                        .font(.system(size: 14))
-                    Text(l10n.replayOnboarding)
-                        .font(.system(size: 17, weight: .regular, design: .rounded))
-                    Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(.white.opacity(0.3))
-                }
-                .foregroundStyle(.white.opacity(0.85))
-                .padding(.horizontal, 14)
-                .padding(.vertical, 12)
-                .background {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(Color.white.opacity(0.06))
-                }
+                Text(l10n.replayOnboarding)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                    )
             }
             .buttonStyle(.plain)
             Text(l10n.replayOnboardingHint)
