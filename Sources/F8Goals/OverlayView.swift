@@ -572,6 +572,27 @@ struct OverlayView: View {
         }
     }
 
+    /// ⌘+Enter：新建目标并**直接按「默认时长」武装**，跳过 ⌘T 的时长选择。
+    /// 和普通回车同一个收尾：挂靠保留（连续加子目标）、输入清空；armedMinutes 不受影响
+    func handleInputSubmitArmed() {
+        guard model.pendingCheckInID == nil else { return }
+        let text = model.inputText
+        // 输入框空：跟普通回车一样——勾掉选中的目标
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if let id = model.selectedID,
+               let goal = store.goals.first(where: { $0.id == id }) {
+                model.selectedID = nil
+                complete(goal)
+            }
+            return
+        }
+        withAnimation(Motion.commit) {
+            store.add(text, parentID: model.inputParentID, minutes: settingsStore.settings.defaultMinutes)
+        }
+        model.inputText = ""
+        focusedField = .input
+    }
+
     /// ⌘T / 点表盘图标：选中了目标（且没在打字）就武装那一条本身；否则武装下一条新建目标
     private func toggleArming() {
         guard model.pendingCheckInID == nil else { return }

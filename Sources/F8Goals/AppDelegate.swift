@@ -234,6 +234,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlayView?.handleTabRequest(shift: event.modifierFlags.contains(.shift))
                 return nil
             }
+            // ⌘+Enter（36）：新建目标并直接按默认时长武装，跳过 ⌘T 选择。
+            // 编辑中/签到卡片/配置面板开着时放行，让原本的 Return 语义走原路
+            if event.keyCode == 36, event.modifierFlags.contains(.command) {
+                if self.model.pendingCheckInID != nil || self.model.showSettings || self.model.editingID != nil {
+                    return event
+                }
+                self.overlayView?.handleInputSubmitArmed()
+                return nil
+            }
             // ⌘.（keyCode 47 = period）；签到未决时不让它插队
             if event.keyCode == 47, event.modifierFlags.contains(.command),
                self.model.pendingCheckInID == nil {
