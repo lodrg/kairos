@@ -220,8 +220,7 @@ struct SettingsPanel: View {
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader(l10n.appearance)
-            SettingsToggle(label: l10n.breathingBackground, isOn: $settingsStore.settings.breathingEnabled)
-            SettingsToggle(label: l10n.auroraBackground, isOn: $settingsStore.settings.auroraEnabled)
+            SettingsToggle(label: l10n.animatedBackground, isOn: $settingsStore.settings.animatedBackground)
         }
     }
 

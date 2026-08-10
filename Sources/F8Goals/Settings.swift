@@ -13,8 +13,9 @@ struct Settings: Codable, Equatable {
     var checkInEscDismisses = false
 
     // 外观
-    var breathingEnabled = true
-    var auroraEnabled = true
+    /// 动态背景总开关：开着 = 极光流动 + 整屏呼吸；关掉 = 静态渐变（CPU 归零）。
+    /// 早期版本拆成「极光」「呼吸」两个开关，用户觉得多余——合并成一个
+    var animatedBackground = true
 
     // 布局；默认值必须精确匹配 Metrics 里原来硬编码的常量，见 LayoutMetrics 的注释
     var inputRestingFraction = 0.58
@@ -25,6 +26,14 @@ struct Settings: Codable, Equatable {
 
     init() {}
 
+    /// 显式声明键名：auroraEnabled 是旧版「极光背景」开关，结构体里已没有对应属性，
+    /// 但旧 settings.json 里还留着它——迁移时用它的值兜底 animatedBackground
+    private enum CodingKeys: String, CodingKey {
+        case durationPresetsMinutes, defaultMinutes, autoArmNewGoals, keepArmedAfterCreate,
+             checkInEscDismisses, inputRestingFraction, textScale, language,
+             animatedBackground, auroraEnabled
+    }
+
     /// 旧版 settings.json 里没有 language 字段——直接走合成解码会整个 decode 失败，
     /// 用户已有的全部配置会被静默重置成默认值。所有字段都用 decodeIfPresent 兜底。
     init(from decoder: Decoder) throws {
@@ -34,11 +43,26 @@ struct Settings: Codable, Equatable {
         autoArmNewGoals = try c.decodeIfPresent(Bool.self, forKey: .autoArmNewGoals) ?? false
         keepArmedAfterCreate = try c.decodeIfPresent(Bool.self, forKey: .keepArmedAfterCreate) ?? false
         checkInEscDismisses = try c.decodeIfPresent(Bool.self, forKey: .checkInEscDismisses) ?? false
-        breathingEnabled = try c.decodeIfPresent(Bool.self, forKey: .breathingEnabled) ?? true
-        auroraEnabled = try c.decodeIfPresent(Bool.self, forKey: .auroraEnabled) ?? true
+        animatedBackground = try c.decodeIfPresent(Bool.self, forKey: .animatedBackground)
+            ?? (c.decodeIfPresent(Bool.self, forKey: .auroraEnabled) ?? true)
         inputRestingFraction = try c.decodeIfPresent(Double.self, forKey: .inputRestingFraction) ?? 0.58
         textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? 1.0
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .en
+    }
+
+    /// 手写 encode：CodingKeys 里保留了旧键 auroraEnabled（只为迁移解码用），
+    /// 没有对应属性——合成 encode 会失败，这里显式只写现有字段
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(durationPresetsMinutes, forKey: .durationPresetsMinutes)
+        try c.encode(defaultMinutes, forKey: .defaultMinutes)
+        try c.encode(autoArmNewGoals, forKey: .autoArmNewGoals)
+        try c.encode(keepArmedAfterCreate, forKey: .keepArmedAfterCreate)
+        try c.encode(checkInEscDismisses, forKey: .checkInEscDismisses)
+        try c.encode(inputRestingFraction, forKey: .inputRestingFraction)
+        try c.encode(textScale, forKey: .textScale)
+        try c.encode(language, forKey: .language)
+        try c.encode(animatedBackground, forKey: .animatedBackground)
     }
 }
 

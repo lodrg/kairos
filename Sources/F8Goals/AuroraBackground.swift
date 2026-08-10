@@ -6,19 +6,17 @@ struct AuroraBackground: View {
     /// 覆盖层是否可见。不可见时必须停掉 TimelineView——
     /// 这些窗口在 App 启动后就常驻内存（每屏一块），不暂停就是常年空转。
     let active: Bool
-    /// 关掉只影响辉光是否呼吸，网格照样流动；**不依赖极光开关**——极光关掉时
-    /// 背景是静态渐变，呼吸层照样叠上去，一明一灭不受影响
-    var breathingEnabled = true
-    /// 关掉整个网格动画，退回一张静态渐变——连 TimelineView 都不起，CPU 归零
-    var meshEnabled = true
+    /// 动态背景总开关：开着 = 极光流动 + 整屏呼吸；关掉 = 静态渐变，CPU 归零。
+    /// 早期拆成「极光」「呼吸」两个开关，用户觉得多余——合并成一个
+    var animated = true
 
     @State private var grain: Image?
 
     var body: some View {
         ZStack {
-            // 时间线只在「网格动画或呼吸」任一开着时才跑：都关掉时退回纯静态渐变，CPU 归零
+            // 时间线只在「动态背景」开着时才跑：关掉时退回纯静态渐变，CPU 归零
             TimelineView(.animation(minimumInterval: 1.0 / 15.0,
-                                    paused: !active || (!meshEnabled && !breathingEnabled))) { timeline in
+                                    paused: !active || !animated)) { timeline in
                 let t = timeline.date.timeIntervalSinceReferenceDate
 
                 // 这个 ZStack 是必须的：TimelineView 的内容闭包如果直接返回两个并列视图，
@@ -27,7 +25,7 @@ struct AuroraBackground: View {
                 // 这个 bug 从 Stage 0 把辉光挪进 TimelineView 做呼吸那次就存在，
                 // 编译、CPU、逻辑测试全都发现不了，只有真的看一眼才看得出来。
                 ZStack {
-                    if meshEnabled {
+                    if animated {
                         MeshGradient(
                             width: 3,
                             height: 3,
@@ -35,13 +33,10 @@ struct AuroraBackground: View {
                             colors: Palette.aurora,
                             smoothsColors: true
                         )
+                        breathingLayers(t)
                     } else {
-                        // 极光关掉时是静态渐变，呼吸层照常叠在上面
                         LinearGradient(colors: Palette.aurora, startPoint: .topLeading, endPoint: .bottomTrailing)
                     }
-
-                    // 呼吸两层独立于极光网格：aurora 关掉时背景照样一明一灭
-                    breathingLayers(t)
                 }
             }
 
@@ -65,19 +60,18 @@ struct AuroraBackground: View {
     }
 
     /// 呼吸两层：辉光 0↔0.55 + 全屏变暗 0.05↔0.45，7s 周期同相——
-    /// 辉光亮时背景最亮、辉光灭时背景最暗。不依赖极光网格；
-    /// 呼吸关掉时退回静态值（辉光 0.08、变暗 0.25），背景不再起伏
+    /// 辉光亮时背景最亮、辉光灭时背景最暗。随动态背景总开关一起开关
     @ViewBuilder
     private func breathingLayers(_ t: Double) -> some View {
         RadialGradient(
             colors: [Color(red: 0.55, green: 0.72, blue: 1.0)
-                .opacity(breathingEnabled ? glowOpacity(t) : 0.08), .clear],
+                .opacity(glowOpacity(t)), .clear],
             center: .init(x: 0.5, y: 0.30),
             startRadius: 0,
             endRadius: 860
         )
         Color.black
-            .opacity(breathingEnabled ? dimOpacity(t) : 0.25)
+            .opacity(dimOpacity(t))
     }
 
     /// 辉光 0↔0.55，周期 7s

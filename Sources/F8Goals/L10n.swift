@@ -61,8 +61,7 @@ struct L10n {
     var canvases: String { zh ? "画布" : "CANVASES" }
     var addCanvas: String { zh ? "添加画布" : "Add canvas" }
     var appearance: String { zh ? "外观" : "APPEARANCE" }
-    var breathingBackground: String { zh ? "呼吸背景" : "Breathing background" }
-    var auroraBackground: String { zh ? "极光背景" : "Aurora background" }
+    var animatedBackground: String { zh ? "动态背景" : "Animated background" }
     var layout: String { zh ? "布局" : "LAYOUT" }
     var inputBarPosition: String { zh ? "输入栏位置" : "Input bar position" }
     var textSize: String { zh ? "文字大小" : "Text size" }

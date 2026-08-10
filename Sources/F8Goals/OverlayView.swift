@@ -56,8 +56,7 @@ struct OverlayView: View {
         ZStack {
             AuroraBackground(
                 active: model.animatedIn,
-                breathingEnabled: settingsStore.settings.breathingEnabled,
-                meshEnabled: settingsStore.settings.auroraEnabled
+                animated: settingsStore.settings.animatedBackground
             )
             .hueRotation(.degrees(store.activeCanvas.hueShift))
             .animation(Motion.canvasSwitch, value: store.activeCanvasID)
