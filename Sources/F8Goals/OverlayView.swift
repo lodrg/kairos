@@ -638,8 +638,19 @@ struct OverlayView: View {
 
     /// 上下键在当前可见行里移动选中项。可见行按「旧→新」排列（上面旧、下面新），
     /// 输入栏在列表下方——所以从输入栏按 ↑ 应该先碰到紧贴输入栏的那条（= 列表最后一条，
-    /// 最新），再继续往上走；按 ↓ 则从最上面（最旧）那条开始。之前把方向搞反了。
+    /// 最新），再继续往上走；按 ↓ 则从最上面（最旧）那条开始。
+    ///
+    /// 挂靠状态（正在输入子目标）下不产生选中态：↑/↓ 移动的是「挂靠对象」本身——
+    /// 在顶层目标之间切换，父目标高亮跟着走。这避免了「父目标高亮 + 选中条 + 回车
+    /// 误勾掉别的目标」的三重混乱；挂靠中的回车本来就应该只负责创建子目标
     private func moveSelection(by delta: Int) {
+        if let attachedID = model.inputParentID {
+            let topLevelIDs = visibleRows.filter { $0.depth == 0 }.map(\.goal.id)
+            guard let idx = topLevelIDs.firstIndex(of: attachedID) else { return }
+            let next = max(0, min(topLevelIDs.count - 1, idx + delta))
+            model.inputParentID = topLevelIDs[next]
+            return
+        }
         let ids = visibleRows.map(\.goal.id)
         guard !ids.isEmpty else { return }
         guard let current = model.selectedID, let idx = ids.firstIndex(of: current) else {
