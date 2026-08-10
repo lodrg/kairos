@@ -90,4 +90,24 @@ struct L10n {
     var hotkeyRejectTyping: String {
         zh ? "普通字符键会在打字时误触，用功能键（F1–F20）或带修饰键的组合" : "Plain character keys clash with typing — use a function key or a modified combo"
     }
+
+    // MARK: 首启引导（一生一次，隐身优先——不做任何常驻提示）
+
+    var onboardingTagline: String {
+        zh ? "你的私人全屏目标空间——收起来后什么也看不到" : "Your private full-screen space for goals — invisible when hidden"
+    }
+    /// %@ = 键名（同一个键的语义：双击呼出/单击收起）
+    var onboardingShowHideSame: String {
+        zh ? "双击 %@ 呼出 · 单击 %@ 收起" : "Double-tap %@ to show · single tap %@ to hide"
+    }
+    /// 两个 %@ = 呼出键名、收起键名
+    var onboardingShowHideDiff: String {
+        zh ? "%@ 呼出 · %@ 收起" : "%@ to show · %@ to hide"
+    }
+    var onboardingNew: String { zh ? "打字 + 回车 = 新建目标" : "Type + Return = new goal" }
+    var onboardingDone: String { zh ? "点方块 / 回车 = 完成" : "Tap the box / Return = done" }
+    var onboardingSettings: String { zh ? "⌘. = 设置（语言、时长、热键都在这）" : "⌘. = Settings (language, durations, hotkeys)" }
+    var onboardingFooter: String {
+        zh ? "回车开始使用 —— 引导不会再来" : "Return to start — this guide won't come back"
+    }
 }

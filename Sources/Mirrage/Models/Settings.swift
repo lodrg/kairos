@@ -33,6 +33,9 @@ struct Settings: Codable, Equatable {
     var hideHotkeyKeyCode = 109
     var hideHotkeyModifiers = 0
 
+    // 首启引导：看过一次就再不弹（隐身优先——任何常驻提示都会暴露这是个热键 App）
+    var onboardingSeen = false
+
     init() {}
 
     /// 显式声明键名：auroraEnabled 是旧版「极光背景」开关，结构体里已没有对应属性，
@@ -41,7 +44,8 @@ struct Settings: Codable, Equatable {
         case durationPresetsMinutes, defaultMinutes, autoArmNewGoals, keepArmedAfterCreate,
              checkInEscDismisses, inputRestingFraction, textScale, language,
              animatedBackground, auroraEnabled,
-             showHotkeyKeyCode, showHotkeyModifiers, hideHotkeyKeyCode, hideHotkeyModifiers
+             showHotkeyKeyCode, showHotkeyModifiers, hideHotkeyKeyCode, hideHotkeyModifiers,
+             onboardingSeen
     }
 
     /// 旧版 settings.json 里没有 language 字段——直接走合成解码会整个 decode 失败，
@@ -62,6 +66,7 @@ struct Settings: Codable, Equatable {
         showHotkeyModifiers = try c.decodeIfPresent(Int.self, forKey: .showHotkeyModifiers) ?? 0
         hideHotkeyKeyCode = try c.decodeIfPresent(Int.self, forKey: .hideHotkeyKeyCode) ?? 109
         hideHotkeyModifiers = try c.decodeIfPresent(Int.self, forKey: .hideHotkeyModifiers) ?? 0
+        onboardingSeen = try c.decodeIfPresent(Bool.self, forKey: .onboardingSeen) ?? false
     }
 
     /// 手写 encode：CodingKeys 里保留了旧键 auroraEnabled（只为迁移解码用），
@@ -81,6 +86,7 @@ struct Settings: Codable, Equatable {
         try c.encode(showHotkeyModifiers, forKey: .showHotkeyModifiers)
         try c.encode(hideHotkeyKeyCode, forKey: .hideHotkeyKeyCode)
         try c.encode(hideHotkeyModifiers, forKey: .hideHotkeyModifiers)
+        try c.encode(onboardingSeen, forKey: .onboardingSeen)
     }
 }
 

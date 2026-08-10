@@ -308,6 +308,8 @@ final class OverlayModel: ObservableObject {
     @Published var recordingHotkey: HotkeyTarget?
     /// 录制被拒的原因（占用/与输入冲突），面板里短暂显示
     @Published var hotkeyRejectMessage: String?
+    /// 首启引导卡（只出现一次，settings.onboardingSeen 控制）
+    @Published var showOnboarding = false
 
     /// 收起时清空。不清的话这些状态会随 App 生命周期只增不减，
     /// 而且下次呼出时上一轮勾选过的目标、选中态会带着中间状态重新出现。
@@ -326,6 +328,7 @@ final class OverlayModel: ObservableObject {
         showSettings = false
         recordingHotkey = nil
         hotkeyRejectMessage = nil
+        showOnboarding = false
         showHistory = false
         checkInFeedback = ""
         retimingGoalID = nil

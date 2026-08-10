@@ -99,6 +99,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.model.draftMinutesIndex = 1 // 3m 预设，和真实流程的默认一致
                 }
             }
+        } else if !settingsStore.settings.onboardingSeen {
+            // 首启引导：自动呼出 + 摆出引导卡（一生一次；回车/Esc/收起键看过即标记，
+            // 之后再也不会弹——隐身优先，任何常驻提示都会暴露这是个热键 App）
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                guard let self else { return }
+                self.show()
+                self.model.showOnboarding = true
+            }
         }
     }
 
@@ -195,6 +203,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let checkInBlocksHide = model.pendingCheckInID != nil && !settingsStore.settings.checkInEscDismisses
         guard isVisible, !checkInBlocksHide else { return }
         isVisible = false
+        // 引导卡开着时按收起键退出 = 看过引导了，标记一生一次
+        if model.showOnboarding { settingsStore.settings.onboardingSeen = true }
         // 配置允许的话，直接收起就相当于关掉签到卡片本身——不算 Done/Snooze 等任何动作
         model.pendingCheckInID = nil
 
@@ -264,6 +274,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 首启引导卡关闭：回车=留在覆盖层开始用；Esc=关掉并收起。两种都标记 seen，
+    /// 引导一生只出现一次
+    private func dismissOnboarding(hide: Bool) {
+        model.showOnboarding = false
+        settingsStore.settings.onboardingSeen = true
+        if hide { self.hide() }
+    }
+
     private func hotkeyManagerRegister() {
         let s = settingsStore.settings
         HotkeyManager.shared.register([
@@ -308,6 +326,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isVisible else { return event }
+            // 首启引导卡：只有两个键——回车=开始使用（留在覆盖层）、Esc=退出（并收起）。
+            // 其他键全吃掉，防误操作；F10 走全局热键那条路（hide 也会标记 seen）
+            if self.model.showOnboarding {
+                if event.keyCode == 36 { // Return
+                    self.dismissOnboarding(hide: false)
+                    return nil
+                }
+                if event.keyCode == 53 { // Esc
+                    self.dismissOnboarding(hide: true)
+                    return nil
+                }
+                return nil
+            }
             // 热键录制模式：面板里点了「录制」后，下一个键就是新热键（Esc 取消）
             if self.model.recordingHotkey != nil {
                 self.handleHotkeyRecording(event)

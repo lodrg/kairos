@@ -45,9 +45,10 @@ struct OverlayView: View {
         LayoutMetrics(scale: settingsStore.settings.textScale, restingFraction: settingsStore.settings.inputRestingFraction)
     }
 
-    /// 有没有全屏接管画面的东西开着（签到或配置面板或历史面板或重选时长）
+    /// 有没有全屏接管画面的东西开着（签到或配置面板或历史面板或重选时长或首启引导）
     private var isModalUp: Bool {
-        model.pendingCheckInID != nil || model.showSettings || model.showHistory || model.retimingGoalID != nil
+        model.pendingCheckInID != nil || model.showSettings || model.showHistory
+            || model.retimingGoalID != nil || model.showOnboarding
     }
 
     private var l10n: L10n { L10n(language: settingsStore.settings.language) }
@@ -73,6 +74,7 @@ struct OverlayView: View {
             historyOverlay
             checkInOverlay
             retimePicker
+            onboardingOverlay
         }
         .onChange(of: model.animatedIn) { _, isIn in
             if isIn {
@@ -167,6 +169,24 @@ struct OverlayView: View {
     }
 
     // MARK: - 配置面板
+
+    /// 首启引导卡：一生一次（settings.onboardingSeen）。键名显示自定义后的实际键
+    private var onboardingOverlay: some View {
+        Group {
+            if model.showOnboarding {
+                let s = settingsStore.settings
+                let showName = HotkeyName.name(keyCode: s.showHotkeyKeyCode, modifiers: s.showHotkeyModifiers)
+                let hideName = HotkeyName.name(keyCode: s.hideHotkeyKeyCode, modifiers: s.hideHotkeyModifiers)
+                OnboardingView(
+                    l10n: l10n,
+                    showKeyName: showName,
+                    hideKeyName: hideName,
+                    sameKey: showName == hideName
+                )
+                .transition(.opacity)
+            }
+        }
+    }
 
     private var settingsOverlay: some View {
         Group {
