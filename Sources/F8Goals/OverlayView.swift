@@ -352,9 +352,12 @@ struct OverlayView: View {
         model.isChoosingDuration = true
         model.armingTargetID = id
         retimeCustomText = ""
-        // 默认选中它原来的时长（在预设里时），否则第一个
-        if let minutes = store.goals.first(where: { $0.id == id })?.timer?.minutes,
-           let idx = durationOptions.firstIndex(where: { $0 == minutes }) {
+        // 默认选中 3 分钟（用户指定：这个页面的默认落在 3m）；
+        // 预设里没有 3 才退回它原来的时长，再没有就用第一个
+        if let idx = durationOptions.firstIndex(where: { $0 == 3 }) {
+            model.draftMinutesIndex = idx
+        } else if let minutes = store.goals.first(where: { $0.id == id })?.timer?.minutes,
+                  let idx = durationOptions.firstIndex(where: { $0 == minutes }) {
             model.draftMinutesIndex = idx
         } else {
             model.draftMinutesIndex = 0

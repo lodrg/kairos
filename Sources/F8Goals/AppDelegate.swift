@@ -86,7 +86,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.model.retimingGoalID = id
                     self.model.isChoosingDuration = true
                     self.model.armingTargetID = id
-                    self.model.draftMinutesIndex = 0
+                    self.model.draftMinutesIndex = 1 // 3m 预设，和真实流程的默认一致
                 }
             }
         }
