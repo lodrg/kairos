@@ -41,6 +41,7 @@ struct SettingsPanel: View {
                 layoutSection
                 languageSection
                 historySection
+                helpSection
 
                 Text(l10n.escToClose)
                     .font(.system(size: 13, weight: .regular, design: .rounded))
@@ -346,6 +347,42 @@ struct SettingsPanel: View {
                 }
             }
             .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - 帮助
+
+    /// 「重播首次引导」：点一下面板关闭、立刻摆出引导卡。只这一次——
+    /// onboardingSeen 保持已看过，退出引导后下次启动不会再自动弹
+    private var helpSection: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            sectionHeader(l10n.helpSection)
+            Button {
+                model.showSettings = false
+                model.showOnboarding = true
+            } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: "questionmark.circle")
+                        .font(.system(size: 14))
+                    Text(l10n.replayOnboarding)
+                        .font(.system(size: 17, weight: .regular, design: .rounded))
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .foregroundStyle(.white.opacity(0.85))
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.06))
+                }
+            }
+            .buttonStyle(.plain)
+            Text(l10n.replayOnboardingHint)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.35))
         }
     }
 

@@ -110,4 +110,12 @@ struct L10n {
     var onboardingFooter: String {
         zh ? "回车开始使用 —— 引导不会再来" : "Return to start — this guide won't come back"
     }
+
+    // MARK: 帮助
+
+    var helpSection: String { zh ? "帮助" : "Help" }
+    var replayOnboarding: String { zh ? "重播首次引导" : "Replay first-run guide" }
+    var replayOnboardingHint: String {
+        zh ? "只看这一次，之后不会再自动弹" : "Shows once — won't auto-appear again"
+    }
 }
