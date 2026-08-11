@@ -364,6 +364,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func installKeyMonitor() {
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             guard let self, self.isVisible else { return event }
+            // 输入法组合态探测：SwiftUI 的 binding 在拼音上屏前一直为空，自绘
+            // placeholder 靠 inputText.isEmpty 判断会在组合期间残留。field editor 的
+            // hasMarkedText 才是真实内容——每次按键刷新一次（组合开始/上屏/取消都覆盖）
+            let responder = NSApp.keyWindow?.firstResponder ?? self.windows.first?.firstResponder
+            if let fieldEditor = responder as? NSTextView {
+                self.model.isComposing = fieldEditor.hasMarkedText()
+            } else {
+                self.model.isComposing = false
+            }
             // 首启引导卡：只有两个键——回车=开始使用（留在覆盖层）、Esc=退出（并收起）。
             // 其他键全吃掉，防误操作；F10 走全局热键那条路（hide 也会标记 seen）
             if self.model.showOnboarding {

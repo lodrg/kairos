@@ -602,13 +602,24 @@ struct OverlayView: View {
                     .foregroundStyle(.white.opacity(0.32))
                     .frame(width: sizing.boxSize, alignment: .center)
 
-                TextField(l10n.newGoalPlaceholder, text: $model.inputText)
+                TextField("", text: $model.inputText)
                     .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .input)
                     .onSubmit(handleInputSubmit)
                     .foregroundStyle(.white)
                     .tint(Palette.accent)
+                    // 自绘 placeholder：内建 prompt 的颜色系统定死、在深底上太抢眼。
+                    // 输入法组合期间（isComposing）必须隐藏——拼音上屏前 binding 是
+                    // 空的，只靠 inputText.isEmpty 判断会把占位文字叠在拼音上面
+                    .overlay(alignment: .leading) {
+                        if model.inputText.isEmpty && !model.isComposing {
+                            Text(l10n.newGoalPlaceholder)
+                                .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.15))
+                                .allowsHitTesting(false)
+                        }
+                    }
 
                 armIndicator
             }

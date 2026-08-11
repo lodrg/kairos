@@ -310,6 +310,9 @@ final class OverlayModel: ObservableObject {
     @Published var hotkeyRejectMessage: String?
     /// 首启引导卡（只出现一次，settings.onboardingSeen 控制）
     @Published var showOnboarding = false
+    /// 输入法组合态：拼音上屏前 binding 是空的，自绘 placeholder 靠这个标志躲开组合期。
+    /// 由 AppDelegate 的本地监听在每次按键时从 field editor 的 hasMarkedText 刷新
+    @Published var isComposing = false
 
     /// 收起时清空。不清的话这些状态会随 App 生命周期只增不减，
     /// 而且下次呼出时上一轮勾选过的目标、选中态会带着中间状态重新出现。
@@ -333,5 +336,6 @@ final class OverlayModel: ObservableObject {
         checkInFeedback = ""
         retimingGoalID = nil
         isChoosingDuration = false
+        isComposing = false
     }
 }
