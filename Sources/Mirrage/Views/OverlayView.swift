@@ -602,22 +602,13 @@ struct OverlayView: View {
                     .foregroundStyle(.white.opacity(0.32))
                     .frame(width: sizing.boxSize, alignment: .center)
 
-                TextField("", text: $model.inputText)
+                TextField(l10n.newGoalPlaceholder, text: $model.inputText)
                     .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
                     .textFieldStyle(.plain)
                     .focused($focusedField, equals: .input)
                     .onSubmit(handleInputSubmit)
                     .foregroundStyle(.white)
                     .tint(Palette.accent)
-                    // 自己画 placeholder：TextField 内建的那个改不了透明度
-                    .overlay(alignment: .leading) {
-                        if model.inputText.isEmpty {
-                            Text(l10n.newGoalPlaceholder)
-                                .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.22))
-                                .allowsHitTesting(false)
-                        }
-                    }
 
                 armIndicator
             }
