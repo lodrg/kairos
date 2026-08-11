@@ -124,7 +124,7 @@ struct L10n {
     var transparentMode: String { zh ? "透明模式" : "Transparent mode" }
     var transparentModeBadge: String { zh ? "透明模式 · 签到暂停" : "Transparent mode · check-ins paused" }
     var transparentModeHint: String {
-        zh ? "覆盖层保持可见，但 AI 的截图、点击、键盘全部穿透，签到不自动弹出——人看得见，机器当它不存在"
-           : "Overlay stays visible, but AI screenshots/clicks/keys pass through and check-ins don't auto-pop — humans see it, machines don't"
+        zh ? "开着时：① AI 的截图/录屏看不到覆盖层（物理屏照常显示）② 目标区点击与键盘穿透给 AI ③ 签到到点不弹卡，关掉后补弹；设置面板本身仍可正常操作。关掉即全部恢复"
+           : "When on: ① AI screenshots/captures can't see the overlay (still on screen) ② goal-area clicks and keys pass through ③ check-ins don't auto-pop and catch up after turning off; the settings panel still works. Off restores everything"
     }
 }

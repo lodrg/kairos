@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotkeyCancellable: AnyCancellable?
     /// 透明模式改动后刷新窗口属性
     private var transparentCancellable: AnyCancellable?
+    /// 面板/历史/签到/重选时长开关时刷新点击穿透（这些界面需要人点）
+    private var modalCancellables: [AnyCancellable] = []
     /// 第一个覆盖窗口的根视图：签到的键盘动作统一走这里执行，
     /// 完成/延后/放弃的动画逻辑只有 OverlayView 里那一份实现，不在这里复制
     private var overlayView: OverlayView?
@@ -77,6 +79,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainActor.assumeIsolated { self?.applyTransparentMode() }
             }
         applyTransparentMode()
+
+        // 面板/历史/签到卡/重选时长 开关时，点击穿透要跟着变：
+        // 这些界面在覆盖层窗口里，穿透开着它们就点不了了（透明模式的经典坑）。
+        // 不用 MergeMany——它的变参 init 要求所有 publisher 同类型，混入 map 会崩编译器
+        let refreshClickThrough: (Any?) -> Void = { [weak self] _ in
+            MainActor.assumeIsolated { self?.applyWindowClickThrough() }
+        }
+        modalCancellables = [
+            model.$showSettings.sink { refreshClickThrough($0) },
+            model.$showHistory.sink { refreshClickThrough($0) },
+            model.$pendingCheckInID.sink { refreshClickThrough($0) },
+            model.$retimingGoalID.sink { refreshClickThrough($0) }
+        ]
 
         // 调试入口：Mirrage --show / --hide / --show-settings / --show-arming
         // 后两个是给「只能用键盘到达的状态」留的口子：远程或没有辅助功能权限时，
@@ -505,16 +520,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         applyTransparentMode()
     }
 
-    /// 透明模式落地到窗口：sharingType=.none（其他进程的截图/录屏里没有覆盖层，
-    /// 物理屏照常显示——密码框同款隐私机制）+ ignoresMouseEvents（点击穿透）。
+    /// 透明模式落地到窗口：sharingType 始终按 transparentMode（截图/录屏永远看不见
+    /// 覆盖层——面板开着也一样，AI 不该看到面板）；点击穿透单独算（见 applyWindowClickThrough）。
     /// 开启时清掉待处理的签到——否则卡片还在、下一次扫描还会把它弹回来
     private func applyTransparentMode() {
         let on = settingsStore.settings.transparentMode
         for window in windows {
             window.sharingType = on ? .none : .readOnly
-            window.ignoresMouseEvents = on
         }
+        applyWindowClickThrough()
         if on { model.pendingCheckInID = nil }
+    }
+
+    /// 点击穿透只在「透明模式开着 且 没有全屏接管界面」时生效——
+    /// 设置面板/历史/签到卡/重选时长都在覆盖层窗口里，穿透开着它们就点不了了
+    private func applyWindowClickThrough() {
+        let passThrough = settingsStore.settings.transparentMode
+            && model.pendingCheckInID == nil
+            && !model.showSettings && !model.showHistory
+            && model.retimingGoalID == nil
+        for window in windows {
+            window.ignoresMouseEvents = passThrough
+        }
     }
 
     @objc private func settingsFromMenu() {
