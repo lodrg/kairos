@@ -18,7 +18,7 @@ struct Settings: Codable, Equatable {
     var animatedBackground = true
 
     // 布局；默认值必须精确匹配 Metrics 里原来硬编码的常量，见 LayoutMetrics 的注释
-    var inputRestingFraction = 0.58
+    var inputRestingFraction = 0.618
     var textScale = 1.0
 
     // 语言；默认英文，保持现有界面不变
@@ -64,7 +64,7 @@ struct Settings: Codable, Equatable {
         checkInEscDismisses = try c.decodeIfPresent(Bool.self, forKey: .checkInEscDismisses) ?? false
         animatedBackground = try c.decodeIfPresent(Bool.self, forKey: .animatedBackground)
             ?? (c.decodeIfPresent(Bool.self, forKey: .auroraEnabled) ?? true)
-        inputRestingFraction = try c.decodeIfPresent(Double.self, forKey: .inputRestingFraction) ?? 0.58
+        inputRestingFraction = try c.decodeIfPresent(Double.self, forKey: .inputRestingFraction) ?? 0.618
         textScale = try c.decodeIfPresent(Double.self, forKey: .textScale) ?? 1.0
         language = try c.decodeIfPresent(AppLanguage.self, forKey: .language) ?? .en
         showHotkeyKeyCode = try c.decodeIfPresent(Int.self, forKey: .showHotkeyKeyCode) ?? 109

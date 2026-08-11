@@ -9,12 +9,12 @@ import SwiftUI
 enum Motion {
     enum Duration {
         static let reveal: TimeInterval = 0.34
-        static let dismiss: TimeInterval = 0.26
+        static let dismiss: TimeInterval = 0.21
     }
 
     /// 呼出：内容整体淡入
     static let reveal = Animation.easeOut(duration: Duration.reveal)
-    /// 收起
+    /// 收起：呼出/收起的时长比 = φ（0.34/0.21 = 1.618）——慢进快出，收得比出利落
     static let dismiss = Animation.easeOut(duration: Duration.dismiss)
     /// 状态切换（勾选、聚焦等）
     static let fade = Animation.easeInOut(duration: 0.26)
@@ -66,14 +66,18 @@ enum Palette {
 /// 行高和输入栏高度是写死的常量，不靠 GeometryReader 量。
 /// 量出来再回填 @State 会让「内容高度 → 布局 → 内容高度」形成回路，是抖动的根源。
 enum Metrics {
-    static let rowHeight: CGFloat = 78
-    /// 子目标行更矮更小——只允许一层嵌套，46pt 字再缩进一级就没法读了
-    static let subRowHeight: CGFloat = 56
+    /// 行高 = 目标字高 46 × 黄金比 φ（1.618）≈ 74.4 → 74。
+    /// 整组尺寸围绕黄金比派生：行高/字高 = φ，输入栏高/行高 ≈ φ，见 DESIGN.md「黄金比例」
+    static let rowHeight: CGFloat = 74
+    /// 子目标行高 = 子目标字高 32 × φ ≈ 51.8 → 52
+    static let subRowHeight: CGFloat = 52
     /// 输入栏加高到能常驻一条「正在给谁加子目标」的提示行（不显示时占位但透明，
     /// 不能让输入栏的实际高度随内容变化，否则又是一处「内容决定布局」）
     static let inputBarHeight: CGFloat = 122
-    /// 输入栏静止时中线落在屏幕高度的这个比例处。0.5 是正中，略大于 0.5 更稳
-    static let inputRestingFraction: CGFloat = 0.58
+    /// 输入栏静止时中线落在屏幕高度的这个比例处。1/φ ≈ 0.618——黄金分割位：
+    /// 输入栏以上是目标生长区（61.8%），以下 38.2% 是操作区。中线固定 = 任意
+    /// 列表高度下构图都保持黄金分割，不随内容漂移
+    static let inputRestingFraction: CGFloat = 0.618
     static let goalFont: CGFloat = 46
     static let subGoalFont: CGFloat = 32
     static let inputFont: CGFloat = 42
@@ -102,7 +106,7 @@ struct LayoutMetrics {
     let gutter: CGFloat
     let subIndent: CGFloat
 
-    /// scale=1.0、restingFraction=0.58 时数值和 `Metrics` 里硬编码的完全一致——
+    /// scale=1.0、restingFraction=0.618 时数值和 `Metrics` 里硬编码的完全一致——
     /// 配置面板的默认值必须精确对应旧常量，否则 Stage 5 一上线所有人的布局都会跳一下
     init(scale: Double, restingFraction: Double) {
         let s = CGFloat(max(0.75, min(1.35, scale)))
