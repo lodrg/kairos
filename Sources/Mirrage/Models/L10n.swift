@@ -122,6 +122,7 @@ struct L10n {
     // MARK: 透明模式（AI 协作）
 
     var transparentMode: String { zh ? "透明模式" : "Transparent mode" }
+    var transparentModeBadge: String { zh ? "透明模式 · 签到暂停" : "Transparent mode · check-ins paused" }
     var transparentModeHint: String {
         zh ? "覆盖层保持可见，但 AI 的截图、点击、键盘全部穿透，签到不自动弹出——人看得见，机器当它不存在"
            : "Overlay stays visible, but AI screenshots/clicks/keys pass through and check-ins don't auto-pop — humans see it, machines don't"

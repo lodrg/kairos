@@ -75,6 +75,15 @@ struct OverlayView: View {
             checkInOverlay
             retimePicker
             onboardingOverlay
+            // 透明模式角标：人眼提醒「签到暂停、点击穿透」——菜单栏的勾太容易漏看
+            if settingsStore.settings.transparentMode {
+                Text(l10n.transparentModeBadge)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.white.opacity(0.35))
+                    .padding(.top, 24)
+                    .padding(.trailing, 28)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+            }
         }
         .onChange(of: model.animatedIn) { _, isIn in
             if isIn {
