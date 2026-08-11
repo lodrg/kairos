@@ -405,14 +405,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlayView?.handleTabRequest(shift: event.modifierFlags.contains(.shift))
                 return nil
             }
-            // ⌘+Enter（36）：签到卡开着 = 保存反馈并结束目标（多行反馈时回车是换行，
-            // 结束必须走 ⌘+Enter）；否则新建目标并直接按默认时长开始计时。
-            // 编辑中/配置面板开着时放行，让原本的 Return 语义走原路
-            if event.keyCode == 36, event.modifierFlags.contains(.command) {
-                if let pending = self.model.pendingCheckInID {
-                    self.overlayView?.resolveCheckIn(id: pending, action: .done)
+            // 回车（36）：签到卡开着时——纯回车 = 保存反馈并结束；⌘+回车 = 换行
+            //（标准键位表里 ⌘+Return 没有绑定，直接往 field editor 插新行）。
+            // 输入法组合态下回车归输入法（上屏拼音），不提交
+            if event.keyCode == 36, let pending = self.model.pendingCheckInID {
+                if event.modifierFlags.contains(.command) {
+                    guard !self.model.isComposing else { return event }
+                    if let fe = NSApp.keyWindow?.firstResponder as? NSTextView {
+                        fe.insertNewline(nil)
+                    }
                     return nil
                 }
+                if !event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+                    || self.model.isComposing {
+                    return event
+                }
+                self.overlayView?.resolveCheckIn(id: pending, action: .done)
+                return nil
+            }
+            // ⌘+Enter（36）：新建目标并直接按默认时长开始计时，跳过 ⌘T 选择。
+            // 编辑中/配置面板开着时放行，让原本的 Return 语义走原路
+            if event.keyCode == 36, event.modifierFlags.contains(.command) {
                 if self.model.showSettings || self.model.editingID != nil {
                     return event
                 }
