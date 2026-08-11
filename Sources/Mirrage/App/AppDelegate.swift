@@ -30,6 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var transparentCancellable: AnyCancellable?
     /// 面板/历史/签到/重选时长开关时刷新点击穿透（这些界面需要人点）
     private var modalCancellables: [AnyCancellable] = []
+    /// 四个全屏界面的实时开关状态——由 sink 参数记录（不能反查 model，见上面注释）
+    private struct ModalFlags {
+        var settings = false
+        var history = false
+        var checkIn = false
+        var retime = false
+    }
+    private var modalFlags = ModalFlags()
     /// 第一个覆盖窗口的根视图：签到的键盘动作统一走这里执行，
     /// 完成/延后/放弃的动画逻辑只有 OverlayView 里那一份实现，不在这里复制
     private var overlayView: OverlayView?
@@ -82,15 +90,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 面板/历史/签到卡/重选时长 开关时，点击穿透要跟着变：
         // 这些界面在覆盖层窗口里，穿透开着它们就点不了了（透明模式的经典坑）。
-        // 不用 MergeMany——它的变参 init 要求所有 publisher 同类型，混入 map 会崩编译器
-        let refreshClickThrough: (Any?) -> Void = { [weak self] _ in
+        // 不用 MergeMany——它的变参 init 要求所有 publisher 同类型，混入 map 会崩编译器。
+        // 注意：@Published 在 willSet 阶段就派发，sink 参数是新值，但此刻反查属性
+        // 还是旧值——必须记录 sink 参数，不能在回调里读 model（实测踩过）
+        let applyClick: () -> Void = { [weak self] in
             MainActor.assumeIsolated { self?.applyWindowClickThrough() }
         }
         modalCancellables = [
-            model.$showSettings.sink { refreshClickThrough($0) },
-            model.$showHistory.sink { refreshClickThrough($0) },
-            model.$pendingCheckInID.sink { refreshClickThrough($0) },
-            model.$retimingGoalID.sink { refreshClickThrough($0) }
+            model.$showSettings.sink { [weak self] v in self?.modalFlags.settings = v; applyClick() },
+            model.$showHistory.sink { [weak self] v in self?.modalFlags.history = v; applyClick() },
+            model.$pendingCheckInID.sink { [weak self] v in self?.modalFlags.checkIn = v != nil; applyClick() },
+            model.$retimingGoalID.sink { [weak self] v in self?.modalFlags.retime = v != nil; applyClick() }
         ]
 
         // 调试入口：Mirrage --show / --hide / --show-settings / --show-arming
@@ -536,9 +546,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 设置面板/历史/签到卡/重选时长都在覆盖层窗口里，穿透开着它们就点不了了
     private func applyWindowClickThrough() {
         let passThrough = settingsStore.settings.transparentMode
-            && model.pendingCheckInID == nil
-            && !model.showSettings && !model.showHistory
-            && model.retimingGoalID == nil
+            && !modalFlags.settings && !modalFlags.history
+            && !modalFlags.checkIn && !modalFlags.retime
         for window in windows {
             window.ignoresMouseEvents = passThrough
         }
