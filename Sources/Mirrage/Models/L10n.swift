@@ -54,9 +54,9 @@ struct L10n {
     /// 默认时长自定义输入框的占位提示
     var defaultMinutesPlaceholder: String { zh ? "自定义" : "Custom" }
     /// 时长选择里「默认时长」角标的悬停提示
-    var durationDefaultHint: String { zh ? "默认时长 —— ⌘+Enter 新建目标时直接用它武装" : "Default duration — ⌘+Enter arms new goals with it" }
-    var autoArmNewGoals: String { zh ? "新目标自动武装" : "Auto-arm new goals" }
-    var keepArmedAfterCreate: String { zh ? "创建后保持武装" : "Keep armed after creating" }
+    var durationDefaultHint: String { zh ? "默认时长 —— ⌘+Enter 新建目标时直接用它开始计时" : "Default duration — ⌘+Enter starts timing new goals with it" }
+    var autoArmNewGoals: String { zh ? "新目标自动开始计时" : "Auto-start timing for new goals" }
+    var keepArmedAfterCreate: String { zh ? "创建后保持计时" : "Keep timing after creating" }
     var escDismissCheckIn: String { zh ? "F10 关闭签到（Esc 为继续）" : "F10 dismisses check-in (Esc = continue)" }
     var canvases: String { zh ? "画布" : "CANVASES" }
     var addCanvas: String { zh ? "添加画布" : "Add canvas" }

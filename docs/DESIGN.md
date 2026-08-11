@@ -95,14 +95,15 @@
   早期版本是 D/K/S/X + 1-4 四动作（End/Keep going/Snooze/Drop），用户要求砍掉：
   快捷键和输入打架的复杂度不值得。
 - **全屏重选时长独立于 ⌘T 的小横条**：`retimingGoalID` 非 nil 时显示全屏时长选择
-  （大块预设 + 自定义输入），Esc 继续专用；⌘T 武装新目标仍走输入栏底部小横条。
+  （大块预设 + 自定义输入），Esc 继续专用；⌘T 给新目标计时仍走输入栏底部小横条。
   两者共用 `isChoosingDuration` / `draftMinutesIndex` / `durationOptions` 的键位与确认逻辑。
-  全屏选择默认落在 **3 分钟**（用户指定：最快的继续路径）。到期扫描在重选时长开着时
+  全屏选择默认落在目标**当前时长**（连续延长时回车即按同样时长继续，用户要求），
+  当前时长不在预设里才退回 3 分钟。到期扫描在重选时长开着时
   不弹新卡（`retimingGoalID == nil` 加进 guard），避免叠卡。
 - **确认时长不靠拦截 Return**：选时长时第一次回车是「确认时长」、第二次才是「建目标」，
   靠 TextField 自带的 `onSubmit` 回调自己判断 `isChoosingDuration`，不是用 `onKeyPress`
   抢在 `onSubmit` 前面拦 Return——两者先后顺序文档没保证，干脆不依赖。
-- **⌘+Enter = 创建 + 默认时长武装**：直接 `store.add(text, parentID:, minutes: defaultMinutes)`，
+- **⌘+Enter = 创建 + 默认时长开始计时**：直接 `store.add(text, parentID:, minutes: defaultMinutes)`，
   跳过选择。挂在本地监听（keyCode 36 + command），编辑中/签到/设置面板开着时放行。
 - **到期扫描用轮询比墙钟，不用 per-goal 的系统定时器**：后者在 Mac 睡眠时不触发，
   醒来后的补偿行为也不可靠；轮询只要「醒着的时候总会再 tick 一次」就能判断对错，
