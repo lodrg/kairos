@@ -405,10 +405,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlayView?.handleTabRequest(shift: event.modifierFlags.contains(.shift))
                 return nil
             }
-            // ⌘+Enter（36）：新建目标并直接按默认时长武装，跳过 ⌘T 选择。
-            // 编辑中/签到卡片/配置面板开着时放行，让原本的 Return 语义走原路
+            // ⌘+Enter（36）：签到卡开着 = 保存反馈并结束目标（多行反馈时回车是换行，
+            // 结束必须走 ⌘+Enter）；否则新建目标并直接按默认时长开始计时。
+            // 编辑中/配置面板开着时放行，让原本的 Return 语义走原路
             if event.keyCode == 36, event.modifierFlags.contains(.command) {
-                if self.model.pendingCheckInID != nil || self.model.showSettings || self.model.editingID != nil {
+                if let pending = self.model.pendingCheckInID {
+                    self.overlayView?.resolveCheckIn(id: pending, action: .done)
+                    return nil
+                }
+                if self.model.showSettings || self.model.editingID != nil {
                     return event
                 }
                 self.overlayView?.handleInputSubmitArmed()

@@ -339,7 +339,7 @@ struct OverlayView: View {
                         goal: goal,
                         l10n: l10n,
                         feedbackText: $model.checkInFeedback,
-                        onSubmitFeedback: { resolveCheckIn(id: id, action: .done) }
+                        isComposing: model.isComposing
                     )
                 }
                 .transition(.opacity)

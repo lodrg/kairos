@@ -74,9 +74,10 @@ struct HistoryPanel: View {
                     .foregroundStyle(.white.opacity(0.9))
                     .lineLimit(2)
                 Spacer(minLength: 12)
-                Text(dateString(goal.completedAt))
-                    .font(.system(size: 12, weight: .regular, design: .monospaced))
+                Text(spanString(goal))
+                    .font(.system(size: 11, weight: .regular, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.35))
+                    .fixedSize()
             }
             if let feedback = goal.feedback, !feedback.isEmpty {
                 Text("💬 \(feedback)")
@@ -93,12 +94,29 @@ struct HistoryPanel: View {
         }
     }
 
-    private func dateString(_ date: Date?) -> String {
-        guard let date else { return "—" }
-        return HistoryPanel.formatter.string(from: date)
+    /// 开始 → 结束：同一天只显示时分；跨天带上日期
+    private func spanString(_ goal: Goal) -> String {
+        let start = goal.startedAt ?? goal.createdAt
+        guard let end = goal.completedAt else { return HistoryPanel.startFormatter.string(from: start) }
+        if Calendar.current.isDate(start, inSameDayAs: end) {
+            return "\(HistoryPanel.timeFormatter.string(from: start)) → \(HistoryPanel.timeFormatter.string(from: end))"
+        }
+        return "\(HistoryPanel.shortFormatter.string(from: start)) → \(HistoryPanel.timeFormatter.string(from: end))"
     }
 
-    private static let formatter: DateFormatter = {
+    private static let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    private static let shortFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM-dd HH:mm"
+        return f
+    }()
+
+    private static let startFormatter: DateFormatter = {
         let f = DateFormatter()
         f.dateFormat = "MM-dd HH:mm"
         return f

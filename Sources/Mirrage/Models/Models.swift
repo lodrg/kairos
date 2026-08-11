@@ -29,6 +29,9 @@ struct Goal: Identifiable, Codable, Equatable {
     var canvasID: UUID
     /// nil = 顶层目标；非空 = 子目标。只允许两层：顶层 + 一层子目标
     var parentID: UUID? = nil
+    /// 开始时间：首次武装计时时记录（重复延长不清掉——开始时间是最初那次）。
+    /// 没计时过的目标显示时回退 createdAt
+    var startedAt: Date? = nil
     var timer: GoalTimer? = nil
     /// 倒计时签到结束时用户写的反馈（可选；结束时保存，随目标留存在 goals.json）
     var feedback: String? = nil
@@ -203,6 +206,10 @@ final class GoalStore: ObservableObject {
     func setTimer(goalID: UUID, minutes: Int?) {
         guard let index = goals.firstIndex(where: { $0.id == goalID }) else { return }
         goals[index].timer = minutes.map { GoalTimer(minutes: $0, startedAt: Date()) }
+        // 首次武装 = 目标的开始时间；重复延长不清掉最初那次
+        if minutes != nil, goals[index].startedAt == nil {
+            goals[index].startedAt = Date()
+        }
         save()
     }
 
