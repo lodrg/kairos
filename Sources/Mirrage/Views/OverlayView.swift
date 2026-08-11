@@ -425,6 +425,17 @@ struct OverlayView: View {
                     area
                 }
 
+                // 细分隔线：列表和输入栏之间一根极淡的线，把输入栏从纯浮动中锚定出来，
+                // 构图上「内容在下、输入在下」的分界更稳——不加卡片框，保持设计语言
+                Rectangle()
+                    .fill(Color.white.opacity(0.07))
+                    .frame(height: 1)
+                    .padding(.horizontal, 22)
+                    .padding(.top, 10)
+                    .padding(.bottom, 6)
+                    .opacity(model.animatedIn ? 1 : 0)
+                    .animation(Motion.reveal, value: model.animatedIn)
+
                 inputBar
                     .frame(height: sizing.inputBarHeight)
 
@@ -588,7 +599,7 @@ struct OverlayView: View {
             HStack(spacing: sizing.gutter) {
                 Image(systemName: "plus")
                     .font(.system(size: sizing.boxSize * 0.6, weight: .light))
-                    .foregroundStyle(.white.opacity(0.24))
+                    .foregroundStyle(.white.opacity(0.32))
                     .frame(width: sizing.boxSize, alignment: .center)
 
                 TextField("", text: $model.inputText)
@@ -603,7 +614,7 @@ struct OverlayView: View {
                         if model.inputText.isEmpty {
                             Text(l10n.newGoalPlaceholder)
                                 .font(.system(size: sizing.inputFont, weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.15))
+                                .foregroundStyle(.white.opacity(0.22))
                                 .allowsHitTesting(false)
                         }
                     }

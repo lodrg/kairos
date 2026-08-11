@@ -43,9 +43,11 @@ struct GoalRow: View {
             } else {
                 Text(goal.text)
                     .font(.system(size: font, weight: .medium, design: .rounded))
+                    // 选中行文字更亮——键盘操作时当前行的存在感要能一眼确认，
+                    // 跟左侧竖线双信号，比单靠一根细线稳
                     .foregroundStyle(isParentHighlighted
                         ? Palette.accent.opacity(0.9)
-                        : .white.opacity(depth == 0 ? 0.92 : 0.72))
+                        : .white.opacity(depth == 0 ? (isSelected ? 1.0 : 0.92) : (isSelected ? 0.85 : 0.72)))
                     .lineLimit(1)
                     .minimumScaleFactor(0.6)
                     .contentShape(Rectangle())
@@ -95,17 +97,28 @@ struct CountdownBadge: View {
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0, paused: !revealed)) { timeline in
             let remaining = firesAt.timeIntervalSince(timeline.date)
+            let urgent = remaining > 0 && remaining < 60
+            let expired = remaining <= 0
             HStack(spacing: 5) {
                 Image(systemName: "timer")
                     .font(.system(size: compact ? 10 : 13, weight: .medium))
                 Text(format(remaining))
-                    .font(.system(size: compact ? 11 : 15, weight: .medium, design: .rounded))
+                    .font(.system(size: compact ? 11 : 16, weight: .semibold, design: .rounded))
                     .monospacedDigit()
             }
-            .foregroundStyle(remaining > 0 ? Color.white.opacity(0.55) : Palette.accent)
-            .padding(.horizontal, 9)
+            // 三态：正常=低调白字；最后一分钟=主题色+淡色描边（提醒来了）；
+            // 已到期=实心主题色底黑字（透明模式下签到不弹，这个就是最醒目的信号）
+            .foregroundStyle(expired ? .black.opacity(0.85) : (urgent ? Palette.accent : .white.opacity(0.6)))
+            .padding(.horizontal, 10)
             .padding(.vertical, compact ? 3 : 5)
-            .background(Capsule().fill(Color.white.opacity(0.07)))
+            .background {
+                Capsule().fill(expired ? Palette.accent : (urgent ? Palette.accent.opacity(0.14) : Color.white.opacity(0.07)))
+            }
+            .overlay {
+                if urgent {
+                    Capsule().strokeBorder(Palette.accent.opacity(0.45), lineWidth: 1)
+                }
+            }
             .contentShape(Capsule())
             .allowsHitTesting(false)
         }
