@@ -314,15 +314,32 @@ struct SettingsPanel: View {
     private var languageSection: some View {
         VStack(alignment: .leading, spacing: 14) {
             sectionHeader(l10n.languageTitle)
-            Picker("", selection: $settingsStore.settings.language) {
-                ForEach(AppLanguage.allCases) { lang in
-                    Text(lang.displayName).tag(lang)
-                }
+            // 自定义分段控件：系统 .segmented 在暗色面板上未选中段对比度太低
+            // （按系统外观渲染，灰字黑底），中文/English 经常"看不见"——换成本
+            // App 自己的预设块语言：选中=主题色底白字，未选中=白8%底主题色字
+            HStack(spacing: 8) {
+                languageChip(.en)
+                languageChip(.zh)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .frame(maxWidth: 260)
         }
+    }
+
+    private func languageChip(_ lang: AppLanguage) -> some View {
+        let isOn = settingsStore.settings.language == lang
+        return Button {
+            settingsStore.settings.language = lang
+        } label: {
+            Text(lang.displayName)
+                .font(.system(size: 14, weight: isOn ? .semibold : .regular))
+                .foregroundStyle(isOn ? Color.white : Palette.accent)
+                .padding(.horizontal, 22)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(isOn ? Palette.accent : Color.white.opacity(0.08))
+                )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - 历史
