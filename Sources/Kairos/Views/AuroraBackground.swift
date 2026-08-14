@@ -9,10 +9,22 @@ struct AuroraBackground: View {
     /// 动态背景总开关：开着 = 极光流动 + 整屏呼吸；关掉 = 静态渐变，CPU 归零。
     /// 早期拆成「极光」「呼吸」两个开关，用户觉得多余——合并成一个
     var animated = true
+    /// 背景色相偏移（度，0 = 原色）：调色板整体转色相
+    var hueShift: Double = 0
+    /// 背景饱和度缩放（1.0 = 原色；0 = 全灰，2 = 更浓）
+    var saturationScale: Double = 1.0
+    /// 背景**颜色**明度缩放（HSV 明度，1.0 = 原色）：色相与饱和度不变，只改明暗。
+    /// 注意这不是 .brightness() 那种整体加白/加黑——那个会把颜色洗淡，
+    /// 这个才是「颜色本身的亮度」（靛蓝变浅靛蓝/深靛蓝，还是靛蓝）
+    var brightnessScale: Double = 1.0
 
     @State private var grain: Image?
 
     var body: some View {
+        // 调色板在源头按 HSV 缩放/偏移一次，渲染和动画逻辑完全不动
+        let colors = Palette.aurora.map {
+            $0.adjustingHSV(hueShift: hueShift, saturationScale: saturationScale, brightnessScale: brightnessScale)
+        }
         ZStack {
             // 时间线只在「动态背景」开着时才跑：关掉时退回纯静态渐变，CPU 归零。
             // 帧率 10fps：漂移正弦周期 20-30s、呼吸 7s，全是慢变化——15fps 是 2-4 倍
@@ -32,12 +44,12 @@ struct AuroraBackground: View {
                             width: 3,
                             height: 3,
                             points: meshPoints(t),
-                            colors: Palette.aurora,
+                            colors: colors,
                             smoothsColors: true
                         )
                         breathingLayers(t)
                     } else {
-                        LinearGradient(colors: Palette.aurora, startPoint: .topLeading, endPoint: .bottomTrailing)
+                        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
                     }
                 }
             }
@@ -134,5 +146,20 @@ private enum Grain {
         else { return Image(systemName: "circle").renderingMode(.template) }
 
         return Image(decorative: cgImage, scale: 2)
+    }
+}
+
+private extension Color {
+    /// HSV 三项调整：色相平移（h + shift mod 360）、饱和度缩放、明度缩放，全部 0–1 钳制。
+    /// 在调色板源头做——这是「颜色本身的属性」调整；.saturation()/.brightness() 那种
+    /// 修饰符是逐像素整体变换，会把颜色洗淡/发闷
+    func adjustingHSV(hueShift: Double, saturationScale: Double, brightnessScale: Double) -> Color {
+        let ns = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
+        var h: CGFloat = 0, s: CGFloat = 0, v: CGFloat = 0, a: CGFloat = 0
+        ns.getHue(&h, saturation: &s, brightness: &v, alpha: &a)
+        let newH = (Double(h) * 360 + hueShift).truncatingRemainder(dividingBy: 360) / 360
+        let newS = max(0, min(1, Double(s) * saturationScale))
+        let newV = max(0, min(1, Double(v) * brightnessScale))
+        return Color(hue: newH, saturation: newS, brightness: newV, opacity: Double(a))
     }
 }

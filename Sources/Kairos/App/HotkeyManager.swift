@@ -2,18 +2,21 @@ import AppKit
 import Carbon.HIToolbox
 import Foundation
 
-/// 全局热键：呼出键 + 收起键，可在设置面板里各自录制。
+/// 全局热键：唯一的呼出键，可在设置面板里录制；收起永远是 Esc（App 内部处理）。
 /// 使用 Carbon RegisterEventHotKey —— 不需要辅助功能 / 输入监控权限。
-/// 默认两个都是 F10（kVK_F10=109），保留旧语义：隐藏态双击呼出 / 可见态单击收起；
-/// 录成不同的键后各按一次即生效。
 ///
-/// 选 F 键的原因：Firefox(F7 光标浏览)、VS Code(F8/F9/F12)、Excel(F9 重算/F4 绝对引用)
-/// 均无冲突；普通字符键会被 RegisterEventHotKey 注册成全局热键，打字时会误触
+/// 冲突处理：如果某个键已经被别的 App 全局注册，RegisterEventHotKey 会返回
+/// eventHotKeyExistsErr——不再静默忽略，而是记进 failedKeys 交给 UI 提示用户重录。
+/// （选带修饰键的组合做默认值，就是为尽量少撞上这种冲突，见 Settings 的注释）
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
-    /// 按下某个热键（参数 = kVK keyCode + Carbon 修饰键掩码；修饰键已由 Carbon 匹配）
+    /// 按下热键（参数 = kVK keyCode + Carbon 修饰键掩码；修饰键已由 Carbon 匹配）
     var onPress: ((_ keyCode: Int, _ modifiers: Int) -> Void)?
+
+    /// 上一次 register 里注册失败的键（通常是被其他 App 占用的全局热键）。
+    /// 设置面板 / 首启引导据此显示冲突警告
+    private(set) var failedKeys: [(keyCode: Int, modifiers: Int)] = []
 
     private var hotKeyRefs: [EventHotKeyRef] = []
     private var idToHotkey: [Int: (keyCode: Int, modifiers: Int)] = [:]
@@ -38,7 +41,9 @@ final class HotkeyManager {
                 &hotKeyID
             )
             guard status == noErr else { return noErr }
+            HotkeyManager.debugLog("carbon handler got id=\(hotKeyID.id)")
             if let hk = HotkeyManager.shared.idToHotkey[Int(hotKeyID.id)] {
+                HotkeyManager.debugLog("carbon dispatch keyCode=\(hk.keyCode) mods=\(hk.modifiers)")
                 HotkeyManager.shared.onPress?(hk.keyCode, hk.modifiers)
             }
             return noErr
@@ -58,9 +63,10 @@ final class HotkeyManager {
     }
 
     /// 注销旧的、注册新的（相同 keyCode+mods 组合只注册一次——Carbon 拒绝重复注册）。
-    /// 幂等，设置改动后直接调
+    /// 幂等，设置改动后直接调。注册失败的键记进 failedKeys，供 UI 显示冲突
     func register(_ hotkeys: [(keyCode: Int, modifiers: Int)]) {
         unregister()
+        failedKeys = []
         var seen = Set<String>()
         for hk in hotkeys {
             let key = "\(hk.keyCode)-\(hk.modifiers)"
@@ -78,6 +84,10 @@ final class HotkeyManager {
                 if let ref { hotKeyRefs.append(ref) }
             } else {
                 NSLog("Kairos: RegisterEventHotKey(\(hk.keyCode)) failed \(status)")
+                if status == OSStatus(eventHotKeyExistsErr) {
+                    // 别的 App 已经占了这个键——这是用户可见的冲突，不是内部错误
+                    failedKeys.append(hk)
+                }
             }
         }
     }
@@ -87,12 +97,22 @@ final class HotkeyManager {
         hotKeyRefs.removeAll()
         idToHotkey.removeAll()
     }
+
+    /// 热键调试日志（NSLog 不进 unified log，App 的坑）——排查「录了没反应」
+    static func debugLog(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) [carbon] \(message)\n"
+        if let handle = fopen("/tmp/kairos-hotkey.log", "a") {
+            fputs(line, handle)
+            fclose(handle)
+        }
+    }
 }
 
 // MARK: - 键名显示与合法性
 
 enum HotkeyName {
-    /// kVK keyCode → 人类可读键名（只覆盖常见的，够用）
+    /// kVK keyCode → 人类可读键名（覆盖 F 键、特殊键 + ANSI 字母/数字/符号，
+    /// 够用且足够准——旧版只有 F 键和少数特殊键，录制 ⌘S 会显示成「⌘1」）
     static func keyName(_ code: Int) -> String? {
         switch code {
         case 122: return "F1"
@@ -119,12 +139,75 @@ enum HotkeyName {
         case 48: return "Tab"
         case 53: return "Esc"
         case 49: return "Space"
+        case 51: return "Delete"
+        case 117: return "Forward Delete"
+        case 76: return "Enter"
+        case 115: return "Home"
+        case 119: return "End"
+        case 116: return "Page Up"
+        case 121: return "Page Down"
         case 123: return "←"
         case 124: return "→"
         case 125: return "↓"
         case 126: return "↑"
+        // ANSI 字母（US 布局；大小写不区分，录的是键位不是字符）
+        case 0: return "A"
+        case 11: return "B"
+        case 8: return "C"
+        case 2: return "D"
+        case 14: return "E"
+        case 3: return "F"
+        case 5: return "G"
+        case 4: return "H"
+        case 34: return "I"
+        case 38: return "J"
+        case 40: return "K"
+        case 37: return "L"
+        case 46: return "M"
+        case 45: return "N"
+        case 31: return "O"
+        case 35: return "P"
+        case 12: return "Q"
+        case 15: return "R"
+        case 1: return "S"
+        case 17: return "T"
+        case 32: return "U"
+        case 9: return "V"
+        case 13: return "W"
+        case 7: return "X"
+        case 16: return "Y"
+        case 6: return "Z"
+        // ANSI 数字 / 符号
+        case 18: return "1"
+        case 19: return "2"
+        case 20: return "3"
+        case 21: return "4"
+        case 23: return "5"
+        case 22: return "6"
+        case 26: return "7"
+        case 28: return "8"
+        case 25: return "9"
+        case 29: return "0"
+        case 27: return "-"
+        case 24: return "="
+        case 33: return "["
+        case 30: return "]"
+        case 42: return "\\"
+        case 43: return ";"
+        case 41: return "'"
+        case 39: return ","
+        case 47: return "."
+        case 44: return "/"
+        case 50: return "`"
         default: return nil
         }
+    }
+
+    /// 系统设置「将 F1、F2 等键用作标准功能键」是否关闭。
+    /// 关着的时候裸 F 键是媒体键（F10=静音），按键根本到不了 App——
+    /// 全局热键注册了也永远不触发。fnState 存全局域：1 = 标准功能键，0 或缺省 = 媒体键
+    static func functionKeysAreMedia() -> Bool {
+        !UserDefaults.standard.bool(forKey: "com.apple.keyboard.fnState")
     }
 
     /// 完整显示名：修饰键符号 + 键名，如 "⌃⌥⇧⌘F10"；认不出就回退 keyCode 数字

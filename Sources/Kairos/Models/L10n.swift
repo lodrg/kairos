@@ -49,6 +49,9 @@ struct L10n {
     var settingsTitle: String { zh ? "设置" : "Settings" }
     var escToClose: String { zh ? "Esc 关闭" : "Esc to close" }
     var countdownCheckIn: String { zh ? "倒计时签到" : "COUNTDOWN CHECK-IN" }
+    var countdownCheckInHint: String {
+        zh ? "到点自动弹出，逼你处理——不是提醒，是打断" : "Auto-pops at the deadline and forces you to handle it — an interruption, not a reminder"
+    }
     var presetsMinutes: String { zh ? "预设时长（分钟）" : "Presets (minutes)" }
     var defaultDuration: String { zh ? "默认时长" : "Default duration" }
     /// 默认时长自定义输入框的占位提示
@@ -57,11 +60,16 @@ struct L10n {
     var durationDefaultHint: String { zh ? "默认时长 —— ⌘+Enter 新建目标时直接用它开始计时" : "Default duration — ⌘+Enter starts timing new goals with it" }
     var autoArmNewGoals: String { zh ? "新目标自动开始计时" : "Auto-start timing for new goals" }
     var keepArmedAfterCreate: String { zh ? "创建后保持计时" : "Keep timing after creating" }
-    var escDismissCheckIn: String { zh ? "F10 关闭签到（Esc 为继续）" : "F10 dismisses check-in (Esc = continue)" }
+    var showTimerBar: String { zh ? "底部计时光带" : "Bottom timer bar" }
     var canvases: String { zh ? "画布" : "CANVASES" }
     var addCanvas: String { zh ? "添加画布" : "Add canvas" }
     var appearance: String { zh ? "外观" : "APPEARANCE" }
+    var appearanceLayout: String { zh ? "外观与布局" : "APPEARANCE & LAYOUT" }
+    var background: String { zh ? "背景" : "BACKGROUND" }
     var animatedBackground: String { zh ? "动态背景" : "Animated background" }
+    var hue: String { zh ? "色相" : "Hue" }
+    var saturation: String { zh ? "饱和度" : "Saturation" }
+    var brightness: String { zh ? "明度" : "Brightness" }
     var layout: String { zh ? "布局" : "LAYOUT" }
     var inputBarPosition: String { zh ? "输入栏位置" : "Input bar position" }
     var textSize: String { zh ? "文字大小" : "Text size" }
@@ -69,7 +77,7 @@ struct L10n {
 
     // MARK: 菜单栏
 
-    var menuToggle: String { zh ? "显示 / 隐藏（双击 F10）" : "Show / Hide  (double-tap F10)" }
+    var menuToggle: String { zh ? "显示 / 隐藏（热键呼出 · Esc 收起）" : "Show / Hide  (hotkey · Esc)" }
     var menuSettings: String { zh ? "设置…（⌘. 覆盖层打开时）" : "Settings…  (⌘. while open)" }
     var menuQuit: String { zh ? "退出 Kairos" : "Quit Kairos" }
 
@@ -77,12 +85,18 @@ struct L10n {
 
     var hotkeys: String { zh ? "热键" : "Hotkeys" }
     var hotkeyShow: String { zh ? "呼出键" : "Show key" }
-    var hotkeyHide: String { zh ? "收起键" : "Hide key" }
     var hotkeyRecord: String { zh ? "录制…" : "Record…" }
     var hotkeyRecording: String { zh ? "按任意键…  Esc 取消" : "Press any key…  Esc to cancel" }
     var hotkeyHint: String {
-        zh ? "两个键相同时：隐藏态双击呼出、可见态单击收起；分开后各按一次即生效。"
-           : "Same key: double-tap to show, single tap to hide. Different keys: one press each."
+        zh ? "隐藏时按一下呼出、可见时再按一下收起；Esc 也始终收起（编辑/选中等多层状态按 Esc 逐级退回）。"
+           : "Press once to show, again to hide. Esc always hides too (layered: Esc backs out of editing/selection first)."
+    }
+    var hotkeyConflict: String {
+        zh ? "此键已被其他 App 占用，全局热键没生效——点「录制…」换一个键" : "This key is taken by another app — the global hotkey isn't active. Record a different one"
+    }
+    var hotkeyRejectMediaFKey: String {
+        zh ? "F 键当前是媒体键（按 F10 是静音）——去 系统设置 → 键盘 开启「将 F1、F2 等键用作标准功能键」，或录制一个带修饰键的组合（如默认的 ⌘⇧S）"
+           : "F keys are media keys right now (F10 = mute). Enable “Use F1, F2, etc. keys as standard function keys” in System Settings → Keyboard, or record a modified combo like the default ⌘⇧S"
     }
     var hotkeyRejectTaken: String {
         zh ? "这个组合键被 Kairos 占用了（Esc/Tab/⌘T/⌘./⌘+Enter），换个键" : "Taken by Kairos (Esc/Tab/⌘T/⌘./⌘+Enter) — pick another"
@@ -96,17 +110,32 @@ struct L10n {
     var onboardingTagline: String {
         zh ? "你的私人全屏目标空间——收起来后什么也看不到" : "Your private full-screen space for goals — invisible when hidden"
     }
-    /// %@ = 键名（同一个键的语义：双击呼出/单击收起）
-    var onboardingShowHideSame: String {
-        zh ? "双击 %@ 呼出 · 单击 %@ 收起" : "Double-tap %@ to show · single tap %@ to hide"
+    /// %@ = 呼出键名。收起永远是 Esc，不需要第二个键
+    var onboardingShowHide: String {
+        zh ? "按 %@ 呼出 · Esc 收起" : "%@ to show · Esc to hide"
     }
-    /// 两个 %@ = 呼出键名、收起键名
-    var onboardingShowHideDiff: String {
-        zh ? "%@ 呼出 · %@ 收起" : "%@ to show · %@ to hide"
+    var onboardingHotkeyConflict: String {
+        zh ? "⚠ 这个键已被其他 App 占用——设置 → 热键 → 录制… 换一个键" : "⚠ This key is taken by another app — Settings → Hotkeys → Record a new one"
     }
     var onboardingNew: String { zh ? "打字 + 回车 = 新建目标" : "Type + Return = new goal" }
     var onboardingDone: String { zh ? "点方块 / 回车 = 完成" : "Tap the box / Return = done" }
-    var onboardingSettings: String { zh ? "⌘. = 设置（语言、时长、热键都在这）" : "⌘. = Settings (language, durations, hotkeys)" }
+    var onboardingEditDelete: String {
+        zh ? "点文字 = 编辑 · 清空 + 退格 = 删除" : "Tap text to edit · clear + Backspace to delete"
+    }
+    var onboardingDeleteSelected: String {
+        zh ? "选中 + ⌘Backspace = 删除" : "Select + ⌘Backspace = delete"
+    }
+    var onboardingArmPick: String { zh ? "⌘T = 选时长" : "⌘T = pick a duration" }
+    var onboardingArmDefault: String {
+        zh ? "⌘+Enter = 按默认时长直接计时" : "⌘+Enter = start timing with the default duration"
+    }
+    var onboardingCheckIn: String {
+        zh ? "到点自动弹出签到，逼你处理" : "Auto check-in at the deadline"
+    }
+    var onboardingCanvas: String { zh ? "←/→ = 切换画布" : "←/→ = switch canvas" }
+    var onboardingSettings: String { zh ? "⌘. = 设置" : "⌘. = Settings" }
+    var onboardingSectionGoals: String { zh ? "目标" : "GOALS" }
+    var onboardingSectionTiming: String { zh ? "计时与画布" : "TIMING & CANVAS" }
     var onboardingFooter: String {
         zh ? "回车开始使用 —— 引导不会再来" : "Return to start — this guide won't come back"
     }

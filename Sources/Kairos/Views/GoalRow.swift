@@ -7,77 +7,100 @@ import SwiftUI
 /// 抓一次布局，抓到的是还没稳定的值，而且永不重算。
 struct GoalRow: View {
     let goal: Goal
-    /// 0 顶层 / 1 子目标
-    let depth: Int
     /// 到列表底部的距离（累加高度算出）。别的行消失/出现后这个值会变，位置随之动画
     let offsetFromBottom: CGFloat
     let sizing: LayoutMetrics
     let revealed: Bool
     let isCompleting: Bool
+    /// 正在播删除淡出：整行渐隐，点击该行 = 反悔删除
+    let isDeleting: Bool
     let isEditing: Bool
     let isSelected: Bool
-    /// 高亮父目标：正在编辑的子目标的父，或输入栏正挂靠着的父（输入子目标时）
-    let isParentHighlighted: Bool
     @Binding var editText: String
     var focusedField: FocusState<FocusField?>.Binding
     let onToggle: () -> Void
     let onBeginEdit: () -> Void
     let onCommitEdit: () -> Void
+    /// 删除淡出中点击该行：反悔
+    let onCancelDelete: () -> Void
 
-    private var rowHeight: CGFloat { depth == 0 ? sizing.rowHeight : sizing.subRowHeight }
-    private var boxSize: CGFloat { depth == 0 ? sizing.boxSize : sizing.subBoxSize }
-    private var font: CGFloat { depth == 0 ? sizing.goalFont : sizing.subGoalFont }
+    /// 编辑内容超一行（含换行或够长）→ 用多行编辑器，行临时加高（editRowHeight）；
+    /// 短文本快速改名仍用单行输入框、行高不变
+    private var usesMultilineEditor: Bool {
+        editText.contains("\n") || editText.count > 18
+    }
+    private var rowHeight: CGFloat {
+        isEditing && usesMultilineEditor ? sizing.editRowHeight : sizing.rowHeight
+    }
+    private var font: CGFloat { sizing.goalFont }
 
     var body: some View {
         HStack(spacing: sizing.gutter) {
-            CheckBox(isDone: goal.isDone, size: boxSize, action: onToggle)
+            CheckBox(isDone: goal.isDone, size: sizing.boxSize, action: isDeleting ? onCancelDelete : onToggle)
 
             if isEditing {
-                TextField("", text: $editText)
-                    .font(.system(size: font, weight: .medium, design: .rounded))
-                    .textFieldStyle(.plain)
-                    .focused(focusedField, equals: .edit(goal.id))
-                    .onSubmit(onCommitEdit)
-                    .foregroundStyle(.white)
-                    .tint(Palette.accent)
+                if usesMultilineEditor {
+                    // 多行编辑器：⌘+回车 = 换行、纯回车 = 保存（本地监听拦截，见 AppDelegate）
+                    TextEditor(text: $editText)
+                        .font(.system(size: font, weight: .medium, design: .rounded))
+                        .scrollContentBackground(.hidden)
+                        .foregroundStyle(.white)
+                        .tint(Palette.accent)
+                        .focused(focusedField, equals: .edit(goal.id))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 2)
+                } else {
+                    TextField("", text: $editText)
+                        .font(.system(size: font, weight: .medium, design: .rounded))
+                        .textFieldStyle(.plain)
+                        .focused(focusedField, equals: .edit(goal.id))
+                        .onSubmit(onCommitEdit)
+                        .foregroundStyle(.white)
+                        .tint(Palette.accent)
+                }
             } else {
                 Text(goal.text)
                     .font(.system(size: font, weight: .medium, design: .rounded))
                     // 选中行文字更亮——键盘操作时当前行的存在感要能一眼确认，
                     // 跟左侧竖线双信号，比单靠一根细线稳
-                    .foregroundStyle(isParentHighlighted
-                        ? Palette.accent.opacity(0.9)
-                        : .white.opacity(depth == 0 ? (isSelected ? 1.0 : 0.92) : (isSelected ? 0.85 : 0.72)))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.6)
+                    .foregroundStyle(.white.opacity(isSelected ? 1.0 : 0.92))
+                    // 长目标最多显示两行：一行放不下先换行、再整体缩字号到 55%，
+                    // 还放不下才省略号截断——完整内容点进去编辑可见
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.55)
                     .contentShape(Rectangle())
-                    .onTapGesture(perform: onBeginEdit)
+                    .onTapGesture(perform: isDeleting ? onCancelDelete : onBeginEdit)
             }
 
             // 挂了倒计时的目标：右侧一个小徽章，显示剩余时间，每秒跳动
             if let timer = goal.timer {
-                CountdownBadge(firesAt: timer.firesAt, revealed: revealed, compact: depth == 1)
+                CountdownBadge(firesAt: timer.firesAt, revealed: revealed)
             }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 22)
-        .padding(.leading, depth == 0 ? 0 : sizing.subIndent)
         .frame(height: rowHeight)
-        // 选中标记：左边距里一道细竖线，不是描边框——避免整行套一个明显的框体。
-        // 父目标高亮复用同一条竖线（编辑子目标 / 输入子目标时亮起）
+        // 选中标记：左边距里一道细竖线，不是描边框——避免整行套一个明显的框体
         .overlay(alignment: .leading) {
             RoundedRectangle(cornerRadius: 2)
-                .fill(Palette.accent.opacity(isParentHighlighted ? 0.5 : 0.6))
+                .fill(Palette.accent.opacity(0.6))
                 .frame(width: 3, height: rowHeight * 0.4)
                 .padding(.leading, 6)
-                .opacity(isSelected || isParentHighlighted ? 1 : 0)
+                .opacity(isSelected ? 1 : 0)
         }
         .offset(y: -offsetFromBottom)
-        .opacity(isCompleting ? 0 : (revealed ? 1 : 0))
+        .opacity(isCompleting || isDeleting ? 0 : (revealed ? 1 : 0))
         .animation(Motion.layout, value: offsetFromBottom)
         .animation(Motion.reveal, value: revealed)
         .animation(Motion.retire, value: isCompleting)
+        .animation(Motion.retire, value: isDeleting)
         .animation(Motion.fade, value: isSelected)
+        // 删除淡出中整行都是「反悔」热区：点方块/文字/空白都取消删除
+        //（子视图的 Button/Text 手势优先级更高，不会双触发）
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if isDeleting { onCancelDelete() }
+        }
         // 新建的目标淡入，而不是直接冒出来
         .transition(.opacity)
     }
@@ -91,8 +114,6 @@ struct GoalRow: View {
 struct CountdownBadge: View {
     let firesAt: Date
     let revealed: Bool
-    /// 子目标行的更小一号
-    var compact = false
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0, paused: !revealed)) { timeline in
@@ -101,16 +122,16 @@ struct CountdownBadge: View {
             let expired = remaining <= 0
             HStack(spacing: 5) {
                 Image(systemName: "timer")
-                    .font(.system(size: compact ? 10 : 13, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                 Text(format(remaining))
-                    .font(.system(size: compact ? 11 : 16, weight: .semibold, design: .rounded))
+                    .font(.system(size: 16, weight: .semibold, design: .rounded))
                     .monospacedDigit()
             }
             // 三态：正常=低调白字；最后一分钟=主题色+淡色描边（提醒来了）；
             // 已到期=实心主题色底黑字（透明模式下签到不弹，这个就是最醒目的信号）
             .foregroundStyle(expired ? .black.opacity(0.85) : (urgent ? Palette.accent : .white.opacity(0.6)))
             .padding(.horizontal, 10)
-            .padding(.vertical, compact ? 3 : 5)
+            .padding(.vertical, 5)
             .background {
                 Capsule().fill(expired ? Palette.accent : (urgent ? Palette.accent.opacity(0.14) : Color.white.opacity(0.07)))
             }

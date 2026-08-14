@@ -15,17 +15,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let model = OverlayModel()
     private let settingsStore = SettingsStore()
     private var windows: [NSWindow] = []
+    /// 非唤起态的底部计时光带窗口：每屏一条、浮在最上层、点击穿透——
+    /// 覆盖层收起时显示活跃计时器的剩余时间（见 TimerBarView）
+    private var timerBarWindows: [NSWindow] = []
     private var statusItem: NSStatusItem?
 
     private var isVisible = false
-    private var lastPress = Date.distantPast
-    /// 双击判定窗口：双击 F10 呼出；可见时单击 F10 或 Esc 收起
+    /// 最近一次呼出的时间——双击保护用（见 handleHotkey 的注释）
+    private var lastShownAt = Date.distantPast
+    /// 双击判定窗口：呼出后这个时间内的再次按下 = 旧版「双击呼出」的肌肉记忆残留，忽略
     private let doubleTapInterval: TimeInterval = 0.45
     private var checkInScanTimer: Timer?
     /// 语言切换后重建菜单栏菜单（NSMenu 是 AppKit 的，不随 SwiftUI 自动重绘）
     private var languageCancellable: AnyCancellable?
-    /// 热键改动后重注册 Carbon 热键
-    private var hotkeyCancellable: AnyCancellable?
     /// 透明模式改动后刷新窗口属性
     private var transparentCancellable: AnyCancellable?
     /// 面板/历史/签到/重选时长开关时刷新点击穿透（这些界面需要人点）
@@ -46,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildWindows()
+        buildTimerBarWindows()
         setupStatusItem()
         installKeyMonitor()
         startCheckInScanning()
@@ -70,13 +73,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 MainActor.assumeIsolated { self?.rebuildMenu() }
             }
 
-        // 热键改动即时重注册（录完一个键面板里立刻生效）
-        hotkeyCancellable = settingsStore.$settings
-            .map { ($0.showHotkeyKeyCode, $0.showHotkeyModifiers, $0.hideHotkeyKeyCode, $0.hideHotkeyModifiers) }
-            .removeDuplicates { $0 == $1 }
-            .sink { [weak self] _ in
-                MainActor.assumeIsolated { self?.hotkeyManagerRegister() }
-            }
+        // 热键改动即时重注册。注意：不能靠 $settings 订阅去重注册——实测录制时
+        // 先写 keyCode 再写 modifiers，第二次赋值不触发订阅（Combine 对结构体子字段
+        // 连续写有合并/丢发的情况），注册会停在「新键位 + 旧修饰键」。录制完成
+        // 后显式调 hotkeyManagerRegister()，不依赖订阅（见 handleHotkeyRecording）
 
         // 透明模式即时生效（截图/点击穿透是窗口属性，改了马上刷到所有窗口）
         transparentCancellable = settingsStore.$settings
@@ -174,6 +174,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// 非唤起态的底部计时光带窗口：每屏一条，贴在屏幕工作区最底部（Dock 上方），
+    /// 透明、浮在最上层、点击穿透、不抢焦点——内容由 TimerBarView 决定：
+    /// 覆盖层收起 + 有活跃计时器时显示「从屏幕外照进来的光」消耗光带，否则全透明。
+    /// 窗口 88pt 高容纳向上漫进屏幕的光晕；常驻但不占交互，不像全屏覆盖层那样按显隐释放
+    private func buildTimerBarWindows() {
+        for window in timerBarWindows {
+            window.orderOut(nil)
+            window.contentView = nil
+        }
+        timerBarWindows.removeAll()
+        for screen in NSScreen.screens {
+            let frame = screen.visibleFrame
+            let bar = NSWindow(
+                contentRect: NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: 88),
+                styleMask: [.borderless],
+                backing: .buffered,
+                defer: false,
+                screen: screen
+            )
+            bar.level = .floating
+            bar.isOpaque = false
+            bar.backgroundColor = .clear
+            bar.hasShadow = false
+            bar.ignoresMouseEvents = true
+            bar.isReleasedWhenClosed = false
+            bar.collectionBehavior = [.canJoinAllSpaces, .stationary]
+            bar.contentView = NSHostingView(rootView: TimerBarView(
+                store: store, model: model, settingsStore: settingsStore
+            ))
+            bar.orderFrontRegardless()
+            timerBarWindows.append(bar)
+        }
+    }
+
     /// 接显示器 / 拔显示器后重建覆盖窗口。原来窗口只在启动时建一次，
     /// 之后新接的屏幕没有覆盖层，拔掉的屏幕留下一块野窗口。
     @objc private func screensChanged() {
@@ -184,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         windows.removeAll()
         buildWindows()
+        buildTimerBarWindows()
         applyTransparentMode() // 新窗口要重新落透明模式的窗口属性
         if wasVisible {
             isVisible = false
@@ -235,16 +270,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 收起时不播内容动画：窗口整体淡出，等透明了再把 animatedIn 复位。
     /// 内容一边往下缩一边淡出会显得拖沓，而且和窗口淡出是两个时钟。
     ///
-    /// 签到未决时整个函数直接不做（除非配置里打开了 checkInEscDismisses，让 F10
-    /// 能直接关掉签到卡片）——这是唯一的收起入口（单击 F10 / 菜单栏 Show/Hide 都走这里）
+    /// 签到未决时整个函数直接不做（强制签到不能被收起绕过去）——
+    /// 这是唯一的收起入口（菜单栏 Show/Hide 也走这里）。签到的两个出口是
+    /// 回车（结束）和 Esc（继续），没有第三种「直接关掉卡片」的方式
     func hide() {
-        let checkInBlocksHide = model.pendingCheckInID != nil && !settingsStore.settings.checkInEscDismisses
-        guard isVisible, !checkInBlocksHide else { return }
+        guard isVisible, model.pendingCheckInID == nil else { return }
         isVisible = false
         // 引导卡开着时按收起键退出 = 看过引导了，标记一生一次
         if model.showOnboarding { settingsStore.settings.onboardingSeen = true }
-        // 配置允许的话，直接收起就相当于关掉签到卡片本身——不算 Done/Snooze 等任何动作
-        model.pendingCheckInID = nil
 
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Motion.Duration.dismiss
@@ -283,32 +316,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 热键逻辑
 
-    /// 两个热键的语义：
-    /// - 呼出键 == 收起键（默认 F10）：隐藏态双击呼出（0.45s 判定窗）、可见态单击收起
-    /// - 呼出键 != 收起键：各按一次即生效（呼出键在可见态、收起键在隐藏态 = 无操作）
-    /// 录制热键时忽略一切热键回调（录 F10 不该顺便把覆盖层弹出来/收掉）
+    /// 唯一的呼出键：**开关式**——隐藏时按一下呼出，可见时再按一下收起。
+    /// 旧版是「呼出键 + 收起键」两个可录制键、默认双击 F10 呼出——收掉后用户的
+    /// 肌肉记忆还在：双击 = 呼出 + 立刻收起，看起来像「闪一下就没反应」。
+    /// 所以加双击保护：刚呼出 0.45s 内的再次按下忽略，双击退化成一次呼出。
+    /// 录制热键时忽略热键回调（录 ⌃⌥F10 不该顺便把覆盖层弹出来/收掉）
     private func handleHotkey(keyCode: Int, modifiers: Int) {
-        guard model.recordingHotkey == nil else { return }
+        guard model.isRecordingHotkey == false else { return }
         let s = settingsStore.settings
-        let isShowKey = keyCode == s.showHotkeyKeyCode && modifiers == s.showHotkeyModifiers
-        let isHideKey = keyCode == s.hideHotkeyKeyCode && modifiers == s.hideHotkeyModifiers
-
-        if isShowKey && isHideKey {
-            if isVisible {
-                hide() // 可见时，单击即收起
-                return
-            }
-            let now = Date()
-            if now.timeIntervalSince(lastPress) < doubleTapInterval {
-                lastPress = .distantPast
-                show() // 双击呼出
-            } else {
-                lastPress = now
-            }
-        } else if isShowKey {
-            if !isVisible { show() }
-        } else if isHideKey {
-            if isVisible { hide() }
+        guard keyCode == s.showHotkeyKeyCode && modifiers == s.showHotkeyModifiers else { return }
+        log("hotkey fired \(keyCode)/\(modifiers) visible=\(isVisible)")
+        if isVisible {
+            // 刚呼出就立刻又按：双击残留，不收起（否则看起来像没生效）
+            if Date().timeIntervalSince(lastShownAt) < doubleTapInterval { return }
+            hide()
+        } else {
+            lastShownAt = Date()
+            show()
         }
     }
 
@@ -320,23 +344,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if hide { self.hide() }
     }
 
+    /// 注册唯一的呼出键；注册失败（被其他 App 占用）时把冲突状态摆到 UI 上。
+    /// 注意：macOS 对跨 App 的相同组合不强制互斥（实测两个进程都能注册成功），
+    /// 所以 failedKeys 通常为空——真正会「录了没反应」的是媒体键场景，见
+    /// HotkeyName.functionKeysAreMedia 与录制时的拦截
     private func hotkeyManagerRegister() {
         let s = settingsStore.settings
         HotkeyManager.shared.register([
-            (keyCode: s.showHotkeyKeyCode, modifiers: s.showHotkeyModifiers),
-            (keyCode: s.hideHotkeyKeyCode, modifiers: s.hideHotkeyModifiers)
+            (keyCode: s.showHotkeyKeyCode, modifiers: s.showHotkeyModifiers)
         ])
+        let conflicted = HotkeyManager.shared.failedKeys.contains {
+            $0.keyCode == s.showHotkeyKeyCode && $0.modifiers == s.showHotkeyModifiers
+        }
+        model.showHotkeyConflicted = conflicted
+        log("hotkey registered \(s.showHotkeyKeyCode)/\(s.showHotkeyModifiers) conflicted=\(conflicted) mediaF=\(HotkeyName.functionKeysAreMedia())")
     }
 
-    /// 面板里录热键：Esc 取消；合法键写进 settings（didSet 自动 save + 订阅重注册）；
-    /// 不合法键显示原因、继续录。录制时所有键都被吃掉，避免「录 F10 时还触发其他操作」
+    /// 面板里录呼出键：Esc 取消；合法键写进 settings（didSet 自动 save + 订阅重注册）；
+    /// 不合法键显示原因、继续录。录制时所有键都被吃掉，避免「录 ⌃⌥F10 时还触发其他操作」
     private func handleHotkeyRecording(_ event: NSEvent) {
-        guard let target = model.recordingHotkey else { return }
+        guard model.isRecordingHotkey else { return }
         let code = Int(event.keyCode)
         let mods = HotkeyName.carbonModifiers(from: event.modifierFlags)
         if code == 53 && mods == 0 { // Esc 取消
-            model.recordingHotkey = nil
+            model.isRecordingHotkey = false
             model.hotkeyRejectMessage = nil
+            return
+        }
+        // 裸 F 键 + 系统把 F 键当媒体键：录了也永远不触发（按键到不了 App）——
+        // 当场拒绝并指路，别让用户录一个死键
+        if mods == 0, (HotkeyName.keyName(code)?.hasPrefix("F") ?? false),
+           HotkeyName.functionKeysAreMedia() {
+            let l10n = L10n(language: settingsStore.settings.language)
+            model.hotkeyRejectMessage = l10n.hotkeyRejectMediaFKey
             return
         }
         guard HotkeyName.isValid(keyCode: code, modifiers: mods) else {
@@ -344,15 +384,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.hotkeyRejectMessage = mods == 0 ? l10n.hotkeyRejectTyping : l10n.hotkeyRejectTaken
             return
         }
-        if target == .show {
-            settingsStore.settings.showHotkeyKeyCode = code
-            settingsStore.settings.showHotkeyModifiers = mods
-        } else {
-            settingsStore.settings.hideHotkeyKeyCode = code
-            settingsStore.settings.hideHotkeyModifiers = mods
-        }
-        model.recordingHotkey = nil
+        settingsStore.settings.showHotkeyKeyCode = code
+        settingsStore.settings.showHotkeyModifiers = mods
+        model.isRecordingHotkey = false
         model.hotkeyRejectMessage = nil
+        // 两个字段都写完才注册（订阅不可靠，见 applicationDidFinishLaunching 的注释）——
+        // 否则会注册成「新键位 + 旧修饰键」，录完按了没反应
+        hotkeyManagerRegister()
+        log("hotkey recorded \(code)/\(mods)")
+    }
+
+    /// 诊断日志（NSLog 不进 unified log，App 的坑，见 DESIGN.md）——热键注册/触发
+    /// 都记一份，排查「录了没反应」用
+    private func log(_ message: String) {
+        let line = "\(ISO8601DateFormatter().string(from: Date())) \(message)\n"
+        if let handle = fopen("/tmp/kairos-hotkey.log", "a") {
+            fputs(line, handle)
+            fclose(handle)
+        }
     }
 
     // MARK: - 键盘：Esc 分层退出 + ⌘. 开合配置面板
@@ -374,7 +423,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.model.isComposing = false
             }
             // 首启引导卡：只有两个键——回车=开始使用（留在覆盖层）、Esc=退出（并收起）。
-            // 其他键全吃掉，防误操作；F10 走全局热键那条路（hide 也会标记 seen）
+            // 其他键全吃掉，防误操作；呼出键走全局热键那条路（hide 也会标记 seen）
             if self.model.showOnboarding {
                 if event.keyCode == 36 { // Return
                     self.dismissOnboarding(hide: false)
@@ -387,22 +436,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return nil
             }
             // 热键录制模式：面板里点了「录制」后，下一个键就是新热键（Esc 取消）
-            if self.model.recordingHotkey != nil {
+            if self.model.isRecordingHotkey {
                 self.handleHotkeyRecording(event)
                 return nil
             }
             if event.keyCode == 53 { // Esc
                 self.handleEscape()
-                return nil
-            }
-            // Tab（48）：Shift+Tab = 退回顶层输入；Tab = 挂靠子目标。
-            // 之前挂在 SwiftUI onKeyPress 上——Tab 能到，但 Shift+Tab 会被 AppKit 的
-            // 焦点循环先吃掉（实测用户按 Shift+Tab 没反应，Esc 反而生效）。
-            // 本地监听在 AppKit 之前看到所有键，和 Esc 是同一条已验证的路径。
-            // 签到卡片开着时放行（Tab 聚焦反馈输入框）；配置面板开着时放行（表单跳字段）
-            if event.keyCode == 48 {
-                if self.model.pendingCheckInID != nil || self.model.showSettings { return event }
-                self.overlayView?.handleTabRequest(shift: event.modifierFlags.contains(.shift))
                 return nil
             }
             // 回车（36）：签到卡开着时——纯回车 = 保存反馈并结束；⌘+回车 = 换行
@@ -423,10 +462,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self.overlayView?.resolveCheckIn(id: pending, action: .done)
                 return nil
             }
+            // 编辑中（36）：纯回车 = 保存；⌘+回车 = 换行——与签到反馈同一套键位。
+            // 多行编辑器（TextEditor）本身回车是换行，本地监听在这里抢先把两个语义
+            // 分开：无修饰的回车直接提交，带 command 的插入换行。输入法组合态放行
+            if event.keyCode == 36, self.model.editingID != nil {
+                if event.modifierFlags.contains(.command) {
+                    guard !self.model.isComposing else { return event }
+                    if let fe = NSApp.keyWindow?.firstResponder as? NSTextView {
+                        fe.insertNewline(nil)
+                    }
+                    return nil
+                }
+                if !event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty
+                    || self.model.isComposing {
+                    return event
+                }
+                self.overlayView?.commitEdit()
+                return nil
+            }
             // ⌘+Enter（36）：新建目标并直接按默认时长开始计时，跳过 ⌘T 选择。
-            // 编辑中/配置面板开着时放行，让原本的 Return 语义走原路
+            // 配置面板开着时放行，让原本的 Return 语义走原路
             if event.keyCode == 36, event.modifierFlags.contains(.command) {
-                if self.model.showSettings || self.model.editingID != nil {
+                if self.model.showSettings {
                     return event
                 }
                 self.overlayView?.handleInputSubmitArmed()
@@ -436,6 +493,57 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if event.keyCode == 47, event.modifierFlags.contains(.command),
                self.model.pendingCheckInID == nil {
                 self.model.showSettings.toggle()
+                return nil
+            }
+            // 编辑中文本已清空时按退格（51）= 删除正在编辑的目标。退格在空输入框里
+            // 本来就是无操作，拦下来没有副作用；带修饰键的退格（⌥=删词、⌘=删到行首等）
+            // 和输入法组合态放行（退格在拼音里是删组合）
+            if event.keyCode == 51,
+               event.modifierFlags.intersection([.command, .control, .option, .shift]).isEmpty,
+               !self.model.isComposing,
+               self.model.editingID != nil,
+               self.model.editText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                self.overlayView?.deleteEditingGoal()
+                return nil
+            }
+            // ⌘+Backspace（keyCode 51 = Delete）：输入框为空且有选中目标时 = 删除选中目标
+            //（和 Finder/列表类 App 的「⌘+Delete 删除选中项」同一肌肉记忆）。
+            // 输入法组合态下放行（⌘Backspace 在拼音里是删组合，不该触发删除）
+            if event.keyCode == 51, event.modifierFlags.contains(.command),
+               !self.model.isComposing,
+               self.model.pendingCheckInID == nil, !self.model.showSettings,
+               !self.model.showHistory, self.model.editingID == nil,
+               self.model.retimingGoalID == nil, !self.model.isChoosingDuration,
+               self.model.inputText.isEmpty, self.model.selectedID != nil {
+                self.overlayView?.deleteSelectedGoal()
+                return nil
+            }
+            // ⌘+V（9）：粘贴。多行 = 每行一条批量创建（粘贴即捕获清单）；单行 = 直接写进
+            // 输入栏。都不依赖输入框的原生粘贴动作——实测把 ⌘V 事件放行给 TextField 后
+            // 粘贴不生效（inputText 一直是空），必须在这里自己读剪贴板、自己写。
+            // 编辑/签到/设置/重选时长里的输入框（TextEditor 等）原生粘贴是好的，放行
+            if event.keyCode == 9, event.modifierFlags.contains(.command) {
+                if self.model.isComposing || self.model.editingID != nil || self.model.pendingCheckInID != nil
+                    || self.model.showSettings || self.model.showHistory || self.model.retimingGoalID != nil
+                    || self.model.isChoosingDuration {
+                    return event
+                }
+                let pasted = NSPasteboard.general.string(forType: .string) ?? ""
+                let lines = pasted
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .filter { !$0.isEmpty }
+                // 输入框里已有文字：不丢——多行时把它并成第一条，单行时拼在前面
+                let leading = self.model.inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+                if lines.count > 1 {
+                    var all = lines
+                    if !leading.isEmpty { all.insert(leading, at: 0) }
+                    HotkeyManager.debugLog("paste batch lines=\(all.count) (leading=\(leading.isEmpty))")
+                    self.overlayView?.pasteBatchCreate(lines: all)
+                } else if let single = lines.first, !single.isEmpty {
+                    HotkeyManager.debugLog("paste single \(single.count) chars")
+                    self.overlayView?.pasteSingleLine(leading.isEmpty ? single : leading + single)
+                }
                 return nil
             }
             return event
@@ -459,9 +567,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.armingTargetID = nil
             model.retimingGoalID = nil
             overlayView?.returnFocusToInput()
-        } else if model.selectedID != nil || model.inputParentID != nil {
+        } else if model.selectedID != nil {
             model.selectedID = nil
-            model.inputParentID = nil
         } else if model.editingID != nil {
             model.editingID = nil
         } else if !model.inputText.isEmpty {
@@ -558,12 +665,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 透明模式落地到窗口：sharingType 始终按 transparentMode（截图/录屏永远看不见
-    /// 覆盖层——面板开着也一样，AI 不该看到面板）；点击穿透单独算（见 applyWindowClickThrough）。
+    /// 覆盖层——面板开着也一样，AI 不该看到面板；计时光带窗口同样对 AI 隐形）；
+    /// 点击穿透单独算（见 applyWindowClickThrough）。
     /// 开启时清掉待处理的签到——否则卡片还在、下一次扫描还会把它弹回来
     private func applyTransparentMode() {
         let on = settingsStore.settings.transparentMode
         for window in windows {
             window.sharingType = on ? .none : .readOnly
+        }
+        for bar in timerBarWindows {
+            bar.sharingType = on ? .none : .readOnly
         }
         applyWindowClickThrough()
         if on { model.pendingCheckInID = nil }

@@ -5,17 +5,12 @@ enum FocusField: Hashable {
     case edit(UUID)
 }
 
-/// 一行要渲染的目标 + 它的嵌套深度（0 顶层 / 1 子目标，只允许这两级）
-private struct GoalRowInfo: Identifiable {
-    let goal: Goal
-    let depth: Int
-    var id: UUID { goal.id }
-    func height(_ sizing: LayoutMetrics) -> CGFloat { depth == 0 ? sizing.rowHeight : sizing.subRowHeight }
-}
+/// 一行要渲染的目标（扁平列表，无层级——旧版的两层子目标已整体移除）
+private typealias GoalRowInfo = Goal
 
 /// GoalRowInfo 算出实际的 offsetFromBottom 之后的样子，喂给 ForEach
 private struct PlacedRow: Identifiable {
-    let info: GoalRowInfo
+    let info: Goal
     let offset: CGFloat
     var id: UUID { info.id }
 }
@@ -57,7 +52,12 @@ struct OverlayView: View {
         ZStack {
             AuroraBackground(
                 active: model.animatedIn,
-                animated: settingsStore.settings.animatedBackground
+                animated: settingsStore.settings.animatedBackground,
+                // 背景色相/饱和度/明度都在调色板源头调整（HSV，色相/饱和度/明度全可调），
+                // 不碰布局/动效/画布逻辑；画布 hueShift 在这里单独叠加
+                hueShift: settingsStore.settings.backgroundHue,
+                saturationScale: settingsStore.settings.backgroundSaturation,
+                brightnessScale: settingsStore.settings.backgroundBrightness
             )
             .hueRotation(.degrees(store.activeCanvas.hueShift))
             .animation(Motion.canvasSwitch, value: store.activeCanvasID)
@@ -114,9 +114,8 @@ struct OverlayView: View {
         // ⌘. 不在这里处理：已实测确认带 command 的组合键会被 AppKit 的 key-equivalent
         // 通道吃掉，根本不会到 onKeyPress。它跟 Esc 一样放在 AppDelegate 的
         // NSEvent 本地监听里（那条路在这个 App 里已经验证能用）。
-        // 方向键左右 = 切换画布（下钻的进入/退回交给 Tab / Shift+Tab，见 handleTab）——
-        // 只在输入框为空、不在编辑、没有签到弹出、也没在选时长时拦截；
-        // 返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
+        // 方向键左右 = 切换画布——只在输入框为空、不在编辑、没有签到弹出、
+        // 也没在选时长时拦截；返回 .ignored 时正常交回给 TextField 移动光标，不影响输入
         .onKeyPress(keys: [.leftArrow, .rightArrow]) { press in
             guard model.animatedIn, model.pendingCheckInID == nil, !model.isChoosingDuration,
                   model.inputText.isEmpty, model.editingID == nil,
@@ -138,9 +137,6 @@ struct OverlayView: View {
             moveSelection(by: press.key == .downArrow ? 1 : -1)
             return .handled
         }
-        // Tab 不在这里处理：onKeyPress 收不到 Shift+Tab（AppKit 焦点循环先吃掉）。
-        // 它跟 Esc 一样放在 AppDelegate 的 NSEvent 本地监听里（那条路已验证能用），
-        // 由 handleTabRequest 转发到 handleTab。
         // 签到卡片的按键不在这里处理：Enter 走卡片输入框的 onSubmit，Esc 走 AppDelegate
         // 本地监听——就两个键，不需要在 SwiftUI 层再拦一遍
     }
@@ -148,7 +144,6 @@ struct OverlayView: View {
     private func switchCanvas(by delta: Int) {
         switchDirection = delta
         model.selectedID = nil
-        model.inputParentID = nil
         withAnimation(Motion.canvasSwitch) { store.cycleCanvas(by: delta) }
         flashCanvasName()
     }
@@ -175,18 +170,17 @@ struct OverlayView: View {
 
     // MARK: - 配置面板
 
-    /// 首启引导卡：一生一次（settings.onboardingSeen）。键名显示自定义后的实际键
+    /// 首启引导卡：一生一次（settings.onboardingSeen）。键名显示自定义后的实际键；
+    /// 呼出键注册失败（被别的 App 占用）时在卡上直接提示重录
     private var onboardingOverlay: some View {
         Group {
             if model.showOnboarding {
                 let s = settingsStore.settings
                 let showName = HotkeyName.name(keyCode: s.showHotkeyKeyCode, modifiers: s.showHotkeyModifiers)
-                let hideName = HotkeyName.name(keyCode: s.hideHotkeyKeyCode, modifiers: s.hideHotkeyModifiers)
                 OnboardingView(
                     l10n: l10n,
                     showKeyName: showName,
-                    hideKeyName: hideName,
-                    sameKey: showName == hideName
+                    conflicted: model.showHotkeyConflicted
                 )
                 .transition(.opacity)
             }
@@ -400,9 +394,8 @@ struct OverlayView: View {
     /// 目标堆到要越过上缘时，列表区继续往下长、输入栏跟着下沉；沉到离底部还剩
     /// bottomInset 就停住，再多的目标从顶部渐隐让位。
     ///
-    /// 高度全部由「行高常量 × 行数」累加算出，不测量任何子视图，
-    /// 所以不存在「内容高度 → 布局 → 内容高度」的回路。子目标行更矮，
-    /// 所以是累加每行各自的高度，不是简单的「行数 × 单一行高」。
+    /// 高度全部由「行高常量 × 行数」算出，不测量任何子视图，
+    /// 所以不存在「内容高度 → 布局 → 内容高度」的回路
     private var content: some View {
         GeometryReader { geo in
             let sizing = sizing
@@ -411,7 +404,7 @@ struct OverlayView: View {
             let maxHeight = max(sizing.rowHeight, geo.size.height - sizing.inputBarHeight - bottomInset)
 
             let (shown, overflowing) = trimToFit(visibleRows, maxHeight: maxHeight, sizing: sizing)
-            let rowsHeight = shown.reduce(CGFloat(0)) { $0 + $1.height(sizing) }
+            let rowsHeight = shown.reduce(CGFloat(0)) { $0 + rowHeight(for: $1, sizing: sizing) }
             let listHeight = min(max(restingHeight, rowsHeight), maxHeight)
             let area = goalArea(shown: shown, sizing: sizing).frame(height: listHeight, alignment: .bottom)
 
@@ -448,46 +441,39 @@ struct OverlayView: View {
         }
     }
 
-    /// 当前画布的全部目标，不筛完成状态——分组要看清父子关系，可见性筛选放到
-    /// 分好组之后逐行做（见 visibleRows），这样父目标退场不会连带切掉还没完成的子目标
+    /// 当前画布的全部目标，按创建顺序（数组是按创建时间追加的）
     private var canvasGoals: [Goal] {
         store.goals.filter { $0.canvasID == store.activeCanvasID }
     }
 
-    /// 顶层目标 + 紧随其后的子目标，按创建顺序；子目标永远跟在自己的父目标后面，
-    /// 不管它们在 store.goals 数组里实际的先后顺序（数组是按创建时间追加的）。
-    /// 只两层：子目标不再有子目标（handleTab 挂靠只允许顶层目标 + 加载时归一化兜底）
-    private var groupedRows: [GoalRowInfo] {
-        let all = canvasGoals
-        let topLevel = all.filter { $0.parentID == nil }
-        var rows: [GoalRowInfo] = []
-        for parent in topLevel {
-            rows.append(GoalRowInfo(goal: parent, depth: 0))
-            for child in all where child.parentID == parent.id {
-                rows.append(GoalRowInfo(goal: child, depth: 1))
-            }
-        }
-        return rows
-    }
-
-    /// 套完成状态 / 淡出可见性；这一步独立于分组，父目标退场不会带走还开着的子目标——
-    /// 它们会以「没有可见父目标的缩进行」单独显示，不会消失
-    private var visibleRows: [GoalRowInfo] {
-        groupedRows.filter { info in
-            if model.retiredIDs.contains(info.goal.id) { return false }
-            if info.goal.isDone { return model.completingIDs.contains(info.goal.id) }
+    /// 套完成状态 / 淡出可见性
+    private var visibleRows: [Goal] {
+        canvasGoals.filter { goal in
+            if model.retiredIDs.contains(goal.id) { return false }
+            if goal.isDone { return model.completingIDs.contains(goal.id) }
             return true
         }
     }
 
-    /// suffix(fitCount) 泛化到不等高的行：从最新（数组末尾，紧贴输入栏）往回累加高度，
+    /// 每行的实际高度：编辑多行内容的那一行临时加高（editRowHeight），其余一律
+    /// 标准行高。纯确定性规则（看编辑内容长度），不测量任何视图——布局引擎按
+    /// 每行高度累加，支持不等高行
+    private func rowHeight(for goal: Goal, sizing: LayoutMetrics) -> CGFloat {
+        if goal.id == model.editingID {
+            let text = model.editText
+            if text.contains("\n") || text.count > 18 { return sizing.editRowHeight }
+        }
+        return sizing.rowHeight
+    }
+
+    /// suffix(fitCount) 泛化到不等高行：从最新（数组末尾，紧贴输入栏）往回累加高度，
     /// 一旦下一行会超过 maxHeight 就停，取能装下的那一段
-    private func trimToFit(_ rows: [GoalRowInfo], maxHeight: CGFloat, sizing: LayoutMetrics) -> (shown: [GoalRowInfo], overflowing: Bool) {
+    private func trimToFit(_ rows: [Goal], maxHeight: CGFloat, sizing: LayoutMetrics) -> (shown: [Goal], overflowing: Bool) {
         guard !rows.isEmpty else { return ([], false) }
         var total: CGFloat = 0
         var cutIndex = rows.count
         for i in stride(from: rows.count - 1, through: 0, by: -1) {
-            let h = rows[i].height(sizing)
+            let h = rowHeight(for: rows[i], sizing: sizing)
             if total + h > maxHeight { break }
             total += h
             cutIndex = i
@@ -505,32 +491,28 @@ struct OverlayView: View {
     /// `.id(activeCanvasID)` 让整块内容在切画布时被当成全新的子树，配合 `.transition`
     /// 做交叉淡入 + 顺方向位移；不做横向滑动是因为滑动要求所有画布常驻视图树，
     /// 而各画布 listHeight 不同，输入框位置会打架。
-    private func goalArea(shown: [GoalRowInfo], sizing: LayoutMetrics) -> some View {
+    private func goalArea(shown: [Goal], sizing: LayoutMetrics) -> some View {
         Group {
             if shown.isEmpty {
                 emptyHint
             } else {
                 ZStack(alignment: .bottomLeading) {
-                    // 高亮父目标：正在编辑的子目标的父，或输入栏正挂靠着的父（输入子目标时）
-                    let highlightedParentID = model.editingID.flatMap { id in
-                        store.goals.first(where: { $0.id == id })?.parentID
-                    } ?? model.inputParentID
                     ForEach(layout(shown, sizing: sizing), id: \.id) { placed in
                         GoalRow(
-                            goal: placed.info.goal,
-                            depth: placed.info.depth,
+                            goal: placed.info,
                             offsetFromBottom: placed.offset,
                             sizing: sizing,
                             revealed: model.animatedIn,
-                            isCompleting: model.completingIDs.contains(placed.info.goal.id),
-                            isEditing: model.editingID == placed.info.goal.id,
-                            isSelected: model.selectedID == placed.info.goal.id,
-                            isParentHighlighted: placed.info.goal.id == highlightedParentID,
+                            isCompleting: model.completingIDs.contains(placed.info.id),
+                            isDeleting: model.deletingIDs.contains(placed.info.id),
+                            isEditing: model.editingID == placed.info.id,
+                            isSelected: model.selectedID == placed.info.id,
                             editText: $model.editText,
                             focusedField: $focusedField,
-                            onToggle: { complete(placed.info.goal) },
-                            onBeginEdit: { beginEdit(placed.info.goal) },
-                            onCommitEdit: { commitEdit() }
+                            onToggle: { complete(placed.info) },
+                            onBeginEdit: { beginEdit(placed.info) },
+                            onCommitEdit: { commitEdit() },
+                            onCancelDelete: { cancelDelete(placed.info) }
                         )
                     }
                 }
@@ -543,12 +525,12 @@ struct OverlayView: View {
 
     /// 每行到列表底部的偏移 = 它下面（比它新）所有行的高度之和。纯函数，不量 geometry；
     /// CGFloat 和之前的 Int indexFromBottom 一样是可绑定值，.animation(_:value:) 照样生效
-    private func layout(_ shown: [GoalRowInfo], sizing: LayoutMetrics) -> [PlacedRow] {
+    private func layout(_ shown: [Goal], sizing: LayoutMetrics) -> [PlacedRow] {
         var offset: CGFloat = 0
         var placed: [PlacedRow] = []
-        for info in shown.reversed() {
-            placed.append(PlacedRow(info: info, offset: offset))
-            offset += info.height(sizing)
+        for goal in shown.reversed() {
+            placed.append(PlacedRow(info: goal, offset: offset))
+            offset += rowHeight(for: goal, sizing: sizing)
         }
         return placed.reversed()
     }
@@ -584,8 +566,7 @@ struct OverlayView: View {
 
     /// 固定切两段：上面 26pt 是「正在选时长」的提示位，不管显不显示都占着；
     /// 下面 inputBarHeight-26 是真正的输入行，在这段里居中——这样输入行的竖直
-    /// 位置永远不变，不会因为提示行的显隐而上下窜动。
-    /// 不再显示「正在给谁加子目标」的文字——父目标高亮已经足够显式
+    /// 位置永远不变，不会因为提示行的显隐而上下窜动
     private var inputBar: some View {
         let sizing = sizing
         return VStack(alignment: .leading, spacing: 0) {
@@ -623,7 +604,6 @@ struct OverlayView: View {
 
                 armIndicator
             }
-            .padding(.leading, model.inputParentID != nil ? sizing.subIndent : 0)
             .frame(height: sizing.inputBarHeight - 26, alignment: .center)
         }
         .padding(.horizontal, 22)
@@ -631,7 +611,6 @@ struct OverlayView: View {
         .frame(height: sizing.inputBarHeight)
         .opacity(model.animatedIn ? 1 : 0)
         .animation(Motion.reveal, value: model.animatedIn)
-        .animation(Motion.commit, value: model.inputParentID)
         .animation(Motion.commit, value: model.isChoosingDuration)
     }
 
@@ -722,12 +701,13 @@ struct OverlayView: View {
             }
             return
         }
+        // 兜底：多行文本漏进了输入框（某些粘贴路径没走 ⌘V 拦截）——回车时按行拆开批量创建
+        if submitMultiline(text) { return }
         withAnimation(Motion.commit) {
-            store.add(text, parentID: model.inputParentID, minutes: effectiveArmedMinutes)
+            store.add(text, minutes: effectiveArmedMinutes)
         }
         model.inputText = ""
         focusedField = .input
-        // inputParentID 故意不清——连续回车能逐条加子目标，直到 Shift+Tab / Esc 主动退回顶层。
         // armedMinutes 是否保留由「创建后是否保持武装」这个配置项决定，默认不保留
         if !settingsStore.settings.keepArmedAfterCreate {
             model.armedMinutes = nil
@@ -735,7 +715,7 @@ struct OverlayView: View {
     }
 
     /// ⌘+Enter：新建目标并**直接按「默认时长」武装**，跳过 ⌘T 的时长选择。
-    /// 和普通回车同一个收尾：挂靠保留（连续加子目标）、输入清空；armedMinutes 不受影响
+    /// 和普通回车同一个收尾：输入清空；armedMinutes 不受影响
     func handleInputSubmitArmed() {
         guard model.pendingCheckInID == nil else { return }
         let text = model.inputText
@@ -748,11 +728,51 @@ struct OverlayView: View {
             }
             return
         }
+        // 兜底：多行文本漏进了输入框——按行拆开批量创建
+        if submitMultiline(text) { return }
         withAnimation(Motion.commit) {
-            store.add(text, parentID: model.inputParentID, minutes: settingsStore.settings.defaultMinutes)
+            store.add(text, minutes: settingsStore.settings.defaultMinutes)
         }
         model.inputText = ""
         focusedField = .input
+    }
+
+    /// 输入文本含多行（粘贴漏进输入框的情况）→ 每行一条批量创建；返回是否已处理。
+    /// ⌘V 拦截是主路径，这里是兜底——单行文本不受影响
+    private func submitMultiline(_ text: String) -> Bool {
+        guard text.contains("\n") else { return false }
+        let lines = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        guard lines.count > 1 else { return false }
+        pasteBatchCreate(lines: lines)
+        return true
+    }
+
+    /// 单行粘贴：直接写进输入栏。不依赖输入框原生粘贴（实测 ⌘V 放行给 TextField 后
+    /// 不生效），由本地监听读剪贴板后调到这里
+    func pasteSingleLine(_ text: String) {
+        model.inputText = text
+        focusedField = .input
+    }
+
+    /// 多行粘贴：每行一条批量创建（粘贴即捕获清单）。输入栏聚焦、剪贴板含多行时
+    /// 由本地监听调进来；武装时长按「下一条新目标」的规则走（⌘T 选的或自动武装）
+    func pasteBatchCreate(lines: [String]) {
+        guard !lines.isEmpty else { return }
+        HotkeyManager.debugLog("pasteBatchCreate called lines=\(lines.count)")
+        withAnimation(Motion.commit) {
+            for line in lines {
+                store.add(line, minutes: effectiveArmedMinutes)
+            }
+        }
+        HotkeyManager.debugLog("pasteBatchCreate done goals=\(store.goals.count)")
+        model.inputText = ""
+        focusedField = .input
+        // 与普通回车同一个收尾：默认不保持武装
+        if !settingsStore.settings.keepArmedAfterCreate {
+            model.armedMinutes = nil
+        }
     }
 
     /// ⌘T / 点表盘图标：选中了目标（且没在打字）就武装那一条本身；否则武装下一条新建目标
@@ -786,13 +806,67 @@ struct OverlayView: View {
         focusedField = .edit(goal.id)
     }
 
-    private func commitEdit() {
+    /// 保存编辑。纯回车（本地监听拦截）或短文本输入框的 onSubmit 都会调到这里。
+    /// 清空 + 回车 = 删除（带淡出；淡出中点击该行或按 Esc 可反悔）
+    func commitEdit() {
         guard let id = model.editingID else { return }
-        withAnimation(Motion.commit) { store.update(id: id, text: model.editText) }
         model.editingID = nil
+        let text = model.editText
+        // 清空 + 回车 = 删除（带淡出；淡出中点击该行或按 Esc 可反悔）
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let goal = store.goals.first(where: { $0.id == id }) {
+            deleteGoal(goal)
+        } else {
+            withAnimation(Motion.commit) { store.update(id: id, text: text) }
+        }
+    }
+
+    // MARK: - 删除（带淡出 + 可反悔）
+
+    /// 删除目标：淡出 0.55s 后真正从 store 移除。
+    /// 淡出中点击该行（onCancelDelete）或按 Esc 收起（resetTransient 清 deletingIDs）
+    /// 都会让删除 Task 的守卫失败 → 目标完好回来，等于反悔。
+    private func deleteGoal(_ goal: Goal) {
+        guard model.pendingCheckInID == nil, !model.deletingIDs.contains(goal.id) else { return }
+        // 选中光标别停在会被删掉的目标上——挤到上一条（和完成退场同一套落点逻辑）
+        model.selectedID = fallbackSelectionID(after: goal.id)
+        // 正在播完成动画的目标被删：撤掉完成态，别让两条退场逻辑打架
+        model.completingIDs.remove(goal.id)
+        model.retiredIDs.remove(goal.id)
+        withAnimation(Motion.commit) { _ = model.deletingIDs.insert(goal.id) }
+        let id = goal.id
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(Motion.completion))
+            // 期间被反悔（点击该行 / Esc 收起）就不再删
+            guard model.deletingIDs.contains(id) else { return }
+            withAnimation(Motion.commit) { store.delete(id) }
+            model.deletingIDs.remove(id)
+        }
+    }
+
+    /// ⌘+Backspace（输入框空且有选中时）：删除选中目标。本地监听调进来
+    func deleteSelectedGoal() {
+        guard let id = model.selectedID,
+              let goal = store.goals.first(where: { $0.id == id }) else { return }
+        deleteGoal(goal)
+    }
+
+    /// 编辑中文本已清空时按退格：删除正在编辑的目标。本地监听调进来
+    func deleteEditingGoal() {
+        guard let id = model.editingID,
+              let goal = store.goals.first(where: { $0.id == id }) else { return }
+        model.editingID = nil
+        deleteGoal(goal)
+    }
+
+    /// 反悔：淡出中点击该行，从 deletingIDs 里撤下来，目标恢复显示
+    private func cancelDelete(_ goal: Goal) {
+        model.deletingIDs.remove(goal.id)
     }
 
     private func complete(_ goal: Goal) {
+        // 删除淡出中不可勾选（此时点方块 = 反悔删除，见 GoalRow 的 isDeleting 分支）
+        guard !model.deletingIDs.contains(goal.id) else { return }
         // 撤销完成（淡出中再点）：目标要回来了，选中光标不动
         if goal.isDone {
             model.completingIDs.remove(goal.id)
@@ -818,13 +892,13 @@ struct OverlayView: View {
         }
     }
 
-    // MARK: - 键盘：选中 + 子目标
+    // MARK: - 键盘：选中
 
     /// 目标完成退场后选中光标的落点：优先**上一条**（列表顺序上更靠上、更旧的那条）——
     /// 它在行位移中原地不动，光标不会跳；没有上一条才落到下一条；都没有就清空。
     /// 注意要在目标 retire 之前调用——那时它还在 visibleRows 里，能算出它的位置
     private func fallbackSelectionID(after id: UUID) -> UUID? {
-        let ids = visibleRows.map(\.goal.id)
+        let ids = visibleRows.map(\.id)
         guard let idx = ids.firstIndex(of: id) else { return nil }
         if idx > 0 { return ids[idx - 1] }
         if idx + 1 < ids.count { return ids[idx + 1] }
@@ -834,19 +908,8 @@ struct OverlayView: View {
     /// 上下键在当前可见行里移动选中项。可见行按「旧→新」排列（上面旧、下面新），
     /// 输入栏在列表下方——所以从输入栏按 ↑ 应该先碰到紧贴输入栏的那条（= 列表最后一条，
     /// 最新），再继续往上走；按 ↓ 则从最上面（最旧）那条开始。
-    ///
-    /// 挂靠状态（正在输入子目标）下不产生选中态：↑/↓ 移动的是「挂靠对象」本身——
-    /// 在顶层目标之间切换，父目标高亮跟着走。这避免了「父目标高亮 + 选中条 + 回车
-    /// 误勾掉别的目标」的三重混乱；挂靠中的回车本来就应该只负责创建子目标
     private func moveSelection(by delta: Int) {
-        if let attachedID = model.inputParentID {
-            let topLevelIDs = visibleRows.filter { $0.depth == 0 }.map(\.goal.id)
-            guard let idx = topLevelIDs.firstIndex(of: attachedID) else { return }
-            let next = max(0, min(topLevelIDs.count - 1, idx + delta))
-            model.inputParentID = topLevelIDs[next]
-            return
-        }
-        let ids = visibleRows.map(\.goal.id)
+        let ids = visibleRows.map(\.id)
         guard !ids.isEmpty else { return }
         guard let current = model.selectedID, let idx = ids.firstIndex(of: current) else {
             model.selectedID = delta > 0 ? ids.first : ids.last
@@ -855,42 +918,9 @@ struct OverlayView: View {
         let next = max(0, min(ids.count - 1, idx + delta))
         model.selectedID = ids[next]
     }
+
     /// AppDelegate 的 handleEscape 取消时长选择后，把焦点还给输入栏
     func returnFocusToInput() {
         focusedField = .input
-    }
-
-    /// AppDelegate 本地监听把 Tab/Shift+Tab 送到这里（onKeyPress 收不到 Shift+Tab——
-    /// AppKit 焦点循环先吃掉）。守卫与原来一致：签到/配置面板/编辑中不处理。
-    /// 这里吃掉 Tab 而不返回 .ignored 很关键：放行会掉进 AppKit 焦点循环，
-    /// 把光标从输入框抢到旁边的表盘按钮上
-    func handleTabRequest(shift: Bool) {
-        guard model.animatedIn, model.pendingCheckInID == nil, !model.showSettings,
-              model.editingID == nil else { return }
-        handleTab(shift: shift)
-    }
-
-    /// Tab 覆盖两种输入，只允许两层（子目标不能当父）：
-    /// 1. Shift+Tab = 退回顶层输入（清挂靠对象）
-    /// 2. 输入框有字（或选中顶层目标）= 把待建的这条缩进为子目标，挂到那个顶层目标下面
-    private func handleTab(shift: Bool) {
-        if shift {
-            model.inputParentID = nil
-            return
-        }
-        // 有明确选中且是顶层目标：挂到那条——选中是用户明确指的对象
-        if let selected = model.selectedID,
-           let goal = store.goals.first(where: { $0.id == selected }),
-           goal.parentID == nil {
-            model.inputParentID = selected
-            model.selectedID = nil
-            return
-        }
-        // 没有可用选中、又已经在子目标模式里：只允许两层，没有更深的地方可去，不动
-        guard model.inputParentID == nil else { return }
-        if !model.inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-           let lastTopLevel = visibleRows.last(where: { $0.depth == 0 })?.goal.id {
-            model.inputParentID = lastTopLevel
-        }
     }
 }

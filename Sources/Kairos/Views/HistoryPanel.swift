@@ -15,54 +15,60 @@ struct HistoryPanel: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.6)
-                .ignoresSafeArea()
-                .contentShape(Rectangle())
-                .onTapGesture(perform: onClose)
+        GeometryReader { geo in
+            ZStack {
+                Color.black.opacity(0.6)
+                    .ignoresSafeArea()
+                    .contentShape(Rectangle())
+                    .onTapGesture(perform: onClose)
 
-            VStack(alignment: .leading, spacing: 18) {
-                HStack {
-                    Text(l10n.historyTitle)
-                        .font(.system(size: 24, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.92))
-                    Spacer()
-                    Button(action: onClose) {
-                        HStack(spacing: 5) {
-                            Image(systemName: "chevron.left")
-                            Text(l10n.back)
-                        }
-                        .font(.system(size: 14, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                ScrollView(showsIndicators: false) {
-                    if completedGoals.isEmpty {
-                        Text(l10n.historyEmpty)
-                            .font(.system(size: 16, weight: .regular, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.3))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 80)
-                    } else {
-                        LazyVStack(spacing: 10) {
-                            ForEach(completedGoals) { goal in
-                                row(goal)
+                VStack(alignment: .leading, spacing: 18) {
+                    HStack {
+                        Text(l10n.historyTitle)
+                            .font(.system(size: 24, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.92))
+                        Spacer()
+                        Button(action: onClose) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "chevron.left")
+                                Text(l10n.back)
                             }
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.5))
                         }
-                        .padding(.bottom, 8)
+                        .buttonStyle(.plain)
+                    }
+
+                    ScrollView(showsIndicators: false) {
+                        if completedGoals.isEmpty {
+                            Text(l10n.historyEmpty)
+                                .font(.system(size: 16, weight: .regular, design: .rounded))
+                                .foregroundStyle(.white.opacity(0.3))
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 80)
+                        } else {
+                            LazyVStack(spacing: 10) {
+                                ForEach(completedGoals) { goal in
+                                    row(goal)
+                                }
+                            }
+                            .padding(.bottom, 8)
+                        }
                     }
                 }
+                .padding(30)
+                // 屏幕放得下用 660×580，放不下跟着屏幕收（列表本身有 ScrollView，不怕矮）
+                .frame(
+                    width: min(660, max(320, geo.size.width - 48)),
+                    height: min(580, geo.size.height * 0.85)
+                )
+                .background {
+                    RoundedRectangle(cornerRadius: 22, style: .continuous)
+                        .fill(Color.black.opacity(0.55))
+                        .stroke(.white.opacity(0.09), lineWidth: 1)
+                }
+                .onTapGesture {}
             }
-            .padding(30)
-            .frame(width: 660, height: 580)
-            .background {
-                RoundedRectangle(cornerRadius: 22, style: .continuous)
-                    .fill(Color.black.opacity(0.55))
-                    .stroke(.white.opacity(0.09), lineWidth: 1)
-            }
-            .onTapGesture {}
         }
     }
 

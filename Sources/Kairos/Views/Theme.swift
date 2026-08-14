@@ -69,9 +69,10 @@ enum Metrics {
     /// 行高 = 目标字高 46 × 黄金比 φ（1.618）≈ 74.4 → 74。
     /// 整组尺寸围绕黄金比派生：行高/字高 = φ，输入栏高/行高 ≈ φ，见 DESIGN.md「黄金比例」
     static let rowHeight: CGFloat = 74
-    /// 子目标行高 = 子目标字高 32 × φ ≈ 51.8 → 52
-    static let subRowHeight: CGFloat = 52
-    /// 输入栏加高到能常驻一条「正在给谁加子目标」的提示行（不显示时占位但透明，
+    /// 编辑行高：编辑多行/长目标时行临时加高到能容纳两行 46pt 大字（74 + 46 ≈ 两行）。
+    /// 只在编辑中的那一行生效，布局引擎按每行高度累加（见 OverlayView.rowHeight）
+    static let editRowHeight: CGFloat = 120
+    /// 输入栏加高到能常驻一条「正在选时长」的提示行（不显示时占位但透明，
     /// 不能让输入栏的实际高度随内容变化，否则又是一处「内容决定布局」）
     static let inputBarHeight: CGFloat = 122
     /// 输入栏静止时中线落在屏幕高度的这个比例处。1/φ ≈ 0.618——黄金分割位：
@@ -79,14 +80,10 @@ enum Metrics {
     /// 列表高度下构图都保持黄金分割，不随内容漂移
     static let inputRestingFraction: CGFloat = 0.618
     static let goalFont: CGFloat = 46
-    static let subGoalFont: CGFloat = 32
     static let inputFont: CGFloat = 42
     static let contentWidth: CGFloat = 940
     static let boxSize: CGFloat = 38
-    static let subBoxSize: CGFloat = 28
     static let gutter: CGFloat = 28
-    /// 子目标缩进量 = 父目标的方块宽 + 间距，让子目标的方块对齐到父目标文字的起始位置
-    static let subIndent: CGFloat = boxSize + gutter
 }
 
 /// `Metrics` 的可配置版本：配置面板里的「输入栏位置」「文字大小」两个滑块解析出来的实际值。
@@ -95,32 +92,26 @@ enum Metrics {
 /// `contentWidth` 不跟着缩放：缩放管的是竖直方向的行高/字号，不是横向排版宽度。
 struct LayoutMetrics {
     let rowHeight: CGFloat
-    let subRowHeight: CGFloat
+    let editRowHeight: CGFloat
     let inputBarHeight: CGFloat
     let inputRestingFraction: CGFloat
     let goalFont: CGFloat
-    let subGoalFont: CGFloat
     let inputFont: CGFloat
     let boxSize: CGFloat
-    let subBoxSize: CGFloat
     let gutter: CGFloat
-    let subIndent: CGFloat
 
     /// scale=1.0、restingFraction=0.618 时数值和 `Metrics` 里硬编码的完全一致——
     /// 配置面板的默认值必须精确对应旧常量，否则 Stage 5 一上线所有人的布局都会跳一下
     init(scale: Double, restingFraction: Double) {
         let s = CGFloat(max(0.75, min(1.35, scale)))
         rowHeight = Metrics.rowHeight * s
-        subRowHeight = Metrics.subRowHeight * s
-        // 26pt 的「正在给谁加子目标」提示槽不跟着缩放，只有下面的实际输入行缩放
+        editRowHeight = Metrics.editRowHeight * s
+        // 26pt 的「正在选时长」提示槽不跟着缩放，只有下面的实际输入行缩放
         inputBarHeight = 26 + 96 * s
         inputRestingFraction = CGFloat(max(0.35, min(0.75, restingFraction)))
         goalFont = Metrics.goalFont * s
-        subGoalFont = Metrics.subGoalFont * s
         inputFont = Metrics.inputFont * s
         boxSize = Metrics.boxSize * s
-        subBoxSize = Metrics.subBoxSize * s
         gutter = Metrics.gutter * s
-        subIndent = boxSize + gutter
     }
 }

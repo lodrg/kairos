@@ -27,8 +27,6 @@ struct Goal: Identifiable, Codable, Equatable {
     /// 完成时间（勾选时记录，用于渐隐动画与恢复）
     var completedAt: Date?
     var canvasID: UUID
-    /// nil = 顶层目标；非空 = 子目标。只允许两层：顶层 + 一层子目标
-    var parentID: UUID? = nil
     /// 开始时间：首次武装计时时记录（重复延长不清掉——开始时间是最初那次）。
     /// 没计时过的目标显示时回退 createdAt
     var startedAt: Date? = nil
@@ -45,8 +43,8 @@ struct Library: Codable {
     var activeCanvasID: UUID
 }
 
-/// v1 磁盘格式：没有 canvasID / parentID / timer。
-/// 迁移时按这个形状单独解码，不与 Goal 混在一起，Goal 里的 canvasID 就能保持非可选。
+/// v1 磁盘格式：没有 canvasID / timer。迁移时按这个形状单独解码，
+/// 不与 Goal 混在一起，Goal 里的 canvasID 就能保持非可选。
 private struct LegacyGoalV1: Codable {
     var id: UUID
     var text: String
@@ -121,28 +119,8 @@ final class GoalStore: ObservableObject {
         canvases = library.canvases.isEmpty ? [Canvas(name: "Personal", hueShift: 0)] : library.canvases
         goals = library.goals
         activeCanvasID = canvases.contains { $0.id == library.activeCanvasID } ? library.activeCanvasID : canvases[0].id
-        normalizeDepth()
-    }
-
-    /// 只保留两层（顶层 + 一层子目标）。历史上出现过第三层（下钻功能期间的测试数据），
-    /// 加载时把第三层目标挂回祖父目标，收敛到两层为止；有改动就落盘。
-    /// 幂等——跑完一遍就不会再有第三层，重复加载没有副作用。
-    private func normalizeDepth() {
-        var changed = false
-        while true {
-            var passChanged = false
-            for i in goals.indices {
-                guard let pid = goals[i].parentID,
-                      let parent = goals.first(where: { $0.id == pid }),
-                      let grand = parent.parentID else { continue }
-                // parent 本身是子目标 → 这条是第三层，挂到祖父目标下（祖父是顶层时 grand 为 nil）
-                goals[i].parentID = grand
-                passChanged = true
-            }
-            if !passChanged { break }
-            changed = true
-        }
-        if changed { save() }
+        // 旧版（v1.0 之前）有子目标（parentID）字段——Goal 里已移除该属性，解码时
+        // JSON 里的 parentID 键被自动忽略，所有目标自然摊平成一层，无需迁移代码
     }
 
     /// v1 落盘是裸数组 [Goal]，没有 canvasID 这个字段，不能直接当 Goal 解码。
@@ -173,11 +151,11 @@ final class GoalStore: ObservableObject {
 
     // MARK: - 目标
 
-    func add(_ text: String, parentID: UUID? = nil, minutes: Int? = nil) {
+    func add(_ text: String, minutes: Int? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         let timer = minutes.map { GoalTimer(minutes: $0, startedAt: Date()) }
-        goals.append(Goal(text: trimmed, canvasID: activeCanvasID, parentID: parentID, timer: timer))
+        goals.append(Goal(text: trimmed, canvasID: activeCanvasID, timer: timer))
         save()
     }
 
@@ -193,15 +171,22 @@ final class GoalStore: ObservableObject {
         save()
     }
 
-    /// 编辑目标；清空文本回车 = 删除
+    /// 编辑目标文本。清空文本时删除目标（编辑「清空+回车 = 删除」的底层实现；
+    /// UI 层走 animatedDelete 播完淡出动画后也落到这里）
     func update(id: UUID, text: String) {
         guard let index = goals.firstIndex(where: { $0.id == id }) else { return }
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
-            goals.remove(at: index)
+            delete(id)
         } else {
             goals[index].text = trimmed
         }
+        save()
+    }
+
+    /// 删除目标（UI 层走 animatedDelete 播完淡出动画后调到这里）
+    func delete(_ id: UUID) {
+        goals.removeAll { $0.id == id }
         save()
     }
 
@@ -275,13 +260,6 @@ final class GoalStore: ObservableObject {
 // MARK: - 覆盖层状态（呼出动画 / 输入 / 编辑）
 
 @MainActor
-/// 面板里正在录制的热键是哪个
-enum HotkeyTarget: String, Codable {
-    case show
-    case hide
-}
-
-@MainActor
 final class OverlayModel: ObservableObject {
     @Published var animatedIn = false
     @Published var inputText = ""
@@ -291,11 +269,8 @@ final class OverlayModel: ObservableObject {
     @Published var completingIDs: Set<UUID> = []
     /// 完成动画播完、已从列表让位的目标（数据仍留在 JSON）
     @Published var retiredIDs: Set<UUID> = []
-    /// 上下键选中的目标；驱动行的选中标记，也是 Tab 拆子目标 / ⌘T 挂计时器的对象
+    /// 上下键选中的目标；驱动行的选中标记，也是 ⌘T 挂计时器的对象
     @Published var selectedID: UUID?
-    /// 待建目标要挂在谁下面；nil = 新建顶层目标。创建后不清空——
-    /// 这样连续回车能逐条加子目标，直到 Shift+Tab / Esc 主动退回顶层
-    @Published var inputParentID: UUID?
 
     /// 到期后待处理的签到；绝不能被 resetTransient 清掉——收起动画完成时会调用它，
     /// 清了就等于让签到被「收起」悄悄取消掉，等于没做强制这件事
@@ -316,10 +291,14 @@ final class OverlayModel: ObservableObject {
     @Published var armedMinutes: Int?
     /// ⌘. 呼出的配置面板
     @Published var showSettings = false
-    /// 面板里正在录制哪个热键；非 nil 时本地监听把下一个键交给热键录制
-    @Published var recordingHotkey: HotkeyTarget?
+    /// 面板里正在录制呼出键；true 时本地监听把下一个键交给热键录制（Esc 取消）
+    @Published var isRecordingHotkey = false
     /// 录制被拒的原因（占用/与输入冲突），面板里短暂显示
     @Published var hotkeyRejectMessage: String?
+    /// 当前呼出键注册失败（被其他 App 占用）——设置面板和首启引导据此显示冲突警告
+    @Published var showHotkeyConflicted = false
+    /// 正在播删除淡出动画的目标（淡出中点击可取消删除，播完从 store 移除）
+    @Published var deletingIDs: Set<UUID> = []
     /// 首启引导卡（只出现一次，settings.onboardingSeen 控制）
     @Published var showOnboarding = false
     /// 输入法组合态：拼音上屏前 binding 是空的，自绘 placeholder 靠这个标志躲开组合期。
@@ -329,6 +308,9 @@ final class OverlayModel: ObservableObject {
     /// 收起时清空。不清的话这些状态会随 App 生命周期只增不减，
     /// 而且下次呼出时上一轮勾选过的目标、选中态会带着中间状态重新出现。
     /// pendingCheckInID 故意不在这里清——见上面的注释。
+    /// deletingIDs 在这里清 = 收起（Esc）会取消还没播完的删除淡出：
+    /// 删除的 Task 靠 `deletingIDs.contains` 做守卫，被清掉就放弃删除，
+    /// 目标下次呼出时完好回来——等于给了删除一个「淡出中按 Esc 反悔」的退路
     func resetTransient() {
         editingID = nil
         editText = ""
@@ -336,12 +318,12 @@ final class OverlayModel: ObservableObject {
         completingIDs = []
         retiredIDs = []
         selectedID = nil
-        inputParentID = nil
+        deletingIDs = []
         isChoosingDuration = false
         armingTargetID = nil
         armedMinutes = nil
         showSettings = false
-        recordingHotkey = nil
+        isRecordingHotkey = false
         hotkeyRejectMessage = nil
         showOnboarding = false
         showHistory = false
