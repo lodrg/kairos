@@ -2,9 +2,11 @@
 
 双击 F10 呼出的极简全屏目标管理：**打字即新建、回车即创建、点方块即完成**。
 全屏大字、只有目标本身，没有多余 UI；常驻后台、无 Dock 图标、零权限热键。
+
+![Kairos 主界面](demo/kairos-1.jpg)
 中英双语，配置面板一键切换。
 
-> 演示：`demo/f8goals-anim.mp4` · `demo/after_f8.png`
+> 演示：`demo/kairos-demo.mp4` · `demo/kairos-2.jpg`
 
 ## 特性
 
