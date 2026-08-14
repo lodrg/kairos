@@ -36,6 +36,13 @@ swift build -c release        # SwiftPM，无需 Xcode
 open dist/Kairos.app
 ```
 
+### 安装（GitHub Release）
+
+1. 从 [Releases](https://github.com/lodrg/kairos/releases) 下载 `Kairos.dmg`（或 `Kairos.app.zip`）
+2. 双击 DMG → 把 Kairos 拖进 Applications（ZIP 则解压后拖）
+3. 首次打开：**右键 → 打开**（ad-hoc 签名未公证，macOS 会拦一下；之后正常双击即可）
+4. 若提示"无法验证开发者"：终端执行 `xattr -dr com.apple.quarantine /Applications/Kairos.app` 一次
+
 ### 自启与退出
 
 - 开机自启：系统设置 → 通用 → 登录项 → 添加 `dist/Kairos.app`
