@@ -9,6 +9,7 @@ mkdir -p "dist/$APP/Contents/MacOS"
 mkdir -p "dist/$APP/Contents/Resources"
 
 cp Packaging/Info.plist "dist/$APP/Contents/Info.plist"
+cp Packaging/AppIcon.icns "dist/$APP/Contents/Resources/AppIcon.icns"
 BIN=$(find .build -path '*release/Kairos' -type f -perm +111 -print -quit 2>/dev/null)
 if [ -z "$BIN" ]; then
   echo "❌ 找不到 release 二进制" >&2
