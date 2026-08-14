@@ -57,18 +57,23 @@ private struct LegacyGoalV1: Codable {
 
 // MARK: - 持久化
 
-/// 数据目录：~/Library/Application Support/Mirrage。
-/// 改名自 F8Goals——首次启动时若旧目录（F8Goals）还在则整体搬过来，一次性。
-/// 两个 store 的 init 都会调用（幂等：新目录存在就不再搬），先到先搬
+/// 数据目录：~/Library/Application Support/Kairos。
+/// 改名自 Mirrage（原名 F8Goals）——首次启动时若旧目录还在则整体搬过来，一次性。
+/// 迁移链：F8Goals → Mirrage → Kairos，逐级检查，先到先搬。两个 store 的 init 都会调用（幂等）
 enum AppData {
     static var directory: URL {
         let base = FileManager.default
             .urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        let newDir = base.appendingPathComponent("Mirrage", isDirectory: true)
-        let oldDir = base.appendingPathComponent("F8Goals", isDirectory: true)
-        if !FileManager.default.fileExists(atPath: newDir.path),
-           FileManager.default.fileExists(atPath: oldDir.path) {
-            try? FileManager.default.moveItem(at: oldDir, to: newDir)
+        let newDir = base.appendingPathComponent("Kairos", isDirectory: true)
+        let mirrageDir = base.appendingPathComponent("Mirrage", isDirectory: true)
+        let f8Dir = base.appendingPathComponent("F8Goals", isDirectory: true)
+        let fm = FileManager.default
+        if !fm.fileExists(atPath: newDir.path) {
+            if fm.fileExists(atPath: mirrageDir.path) {
+                try? fm.moveItem(at: mirrageDir, to: newDir)
+            } else if fm.fileExists(atPath: f8Dir.path) {
+                try? fm.moveItem(at: f8Dir, to: newDir)
+            }
         }
         return newDir
     }

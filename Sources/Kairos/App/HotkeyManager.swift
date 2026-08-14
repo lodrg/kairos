@@ -53,7 +53,7 @@ final class HotkeyManager {
             &handlerRef
         )
         if installStatus != noErr {
-            NSLog("Mirrage: InstallEventHandler failed \(installStatus)")
+            NSLog("Kairos: InstallEventHandler failed \(installStatus)")
         }
     }
 
@@ -77,7 +77,7 @@ final class HotkeyManager {
                 nextID += 1
                 if let ref { hotKeyRefs.append(ref) }
             } else {
-                NSLog("Mirrage: RegisterEventHotKey(\(hk.keyCode)) failed \(status)")
+                NSLog("Kairos: RegisterEventHotKey(\(hk.keyCode)) failed \(status)")
             }
         }
     }

@@ -1,4 +1,4 @@
-# Mirrage
+# Kairos（时机）
 
 双击 F10 呼出的极简全屏目标管理：**打字即新建、回车即创建、点方块即完成**。
 全屏大字、只有目标本身，没有多余 UI；常驻后台、无 Dock 图标、零权限热键。
@@ -30,13 +30,13 @@
 
 ```bash
 swift build -c release        # SwiftPM，无需 Xcode
-./Packaging/package.sh        # → dist/Mirrage.app（ad-hoc 签名）
-open dist/Mirrage.app
+./Packaging/package.sh        # → dist/Kairos.app（ad-hoc 签名）
+open dist/Kairos.app
 ```
 
 ### 自启与退出
 
-- 开机自启：系统设置 → 通用 → 登录项 → 添加 `dist/Mirrage.app`
+- 开机自启：系统设置 → 通用 → 登录项 → 添加 `dist/Kairos.app`
 - 退出：菜单栏图标 → Quit（无 Dock 图标）
 
 ## 使用
@@ -135,12 +135,12 @@ open dist/Mirrage.app
 
 | 内容 | 位置 |
 |---|---|
-| 目标（含完成状态、计时器、**反馈**） | `~/Library/Application Support/Mirrage/goals.json` |
-| 配置（时长、语言、外观、布局） | `~/Library/Application Support/Mirrage/settings.json` |
-| v1 迁移备份（老数据） | `~/Library/Application Support/Mirrage/goals.v1.json` |
+| 目标（含完成状态、计时器、**反馈**） | `~/Library/Application Support/Kairos/goals.json` |
+| 配置（时长、语言、外观、布局） | `~/Library/Application Support/Kairos/settings.json` |
+| v1 迁移备份（老数据） | `~/Library/Application Support/Kairos/goals.v1.json` |
 
-（改名自 F8Goals：首次启动时旧目录 `~/Library/Application Support/F8Goals` 自动整体
-搬过来，一次性，无需手动处理。）
+（改名链 F8Goals → Mirrage → **Kairos**：首次启动时旧目录自动整体搬过来，
+一次性，无需手动处理。）
 
 勾选完成的目标永远留在 goals.json 留档，不删除。文件不存在/损坏静默退回默认值。
 
@@ -155,7 +155,7 @@ App 抢键盘焦点（新旧激活 API 都试过，系统级限制），打字�
 ### 项目结构
 
 ```
-Sources/Mirrage/
+Sources/Kairos/
 ├── App/                      # 生命周期与系统接线
 │   ├── main.swift            # 入口（@main）
 │   ├── AppDelegate.swift     # 窗口/动画/本地按键监听/到期扫描
@@ -177,7 +177,7 @@ Sources/Mirrage/
 ### 调试入口
 
 ```bash
-dist/Mirrage.app/Contents/MacOS/Mirrage --show          # 启动后自动呼出
+dist/Kairos.app/Contents/MacOS/Kairos --show          # 启动后自动呼出
 ... --hide                                              # 启动后保持收起
 ... --show-settings                                     # 直接摆出配置面板
 ... --show-arming                                       # 直接摆出时长选择

@@ -17,7 +17,7 @@ struct OnboardingView: View {
                 .ignoresSafeArea()
             VStack(spacing: 30) {
                 VStack(spacing: 10) {
-                    Text("Mirrage")
+                    Text("Kairos")
                         .font(.system(size: 34, weight: .bold))
                         .foregroundStyle(.white.opacity(0.95))
                     Text(l10n.onboardingTagline)
