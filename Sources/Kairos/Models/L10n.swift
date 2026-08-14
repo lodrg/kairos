@@ -148,6 +148,19 @@ struct L10n {
         zh ? "只看这一次，之后不会再自动弹" : "Shows once — won't auto-appear again"
     }
 
+    // MARK: 更新
+
+    var checkForUpdates: String { zh ? "检查更新" : "Check for updates" }
+    var currentVersionFormat: String { zh ? "当前 v%@" : "Current v%@" }
+    var updateChecking: String { zh ? "检查中…" : "Checking…" }
+    var updateUpToDate: String { zh ? "✓ 已是最新版本" : "✓ You're up to date" }
+    var updateAvailableFormat: String {
+        zh ? "发现新版本 v%@ · 点此打开下载页" : "New version v%@ — tap to open the download page"
+    }
+    var updateFailed: String {
+        zh ? "检查失败（网络或接口限流），稍后再试" : "Check failed (network or rate limit) — try again later"
+    }
+
     // MARK: 透明模式（AI 协作）
 
     var transparentMode: String { zh ? "透明模式" : "Transparent mode" }

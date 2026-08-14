@@ -140,6 +140,8 @@ open dist/Kairos.app
 - **Language**：English / 中文 即时切换（全部文案单一来源 `L10n.swift`）
 - **History**：曾经的目标与反馈
 - **Help**：重播首次引导（点一下立刻看快捷键卡，只这一次，之后不会再自动弹）
+- **Check for updates**：检查更新——对比 GitHub 最新 Release，有新版点击直达下载页
+  （轻量档；以后有 Apple Developer 账号换 Sparkle 自动更新）
 
 配置改动即时生效，无需重启。面板高度自适应屏幕：小屏/低分辨率下整体变成可滚动的
 卡片，不会再顶破屏幕。

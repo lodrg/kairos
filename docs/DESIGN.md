@@ -142,6 +142,14 @@
   清单粘贴即捕获，一次建 N 条。三个 guard：输入框非空放行（打字到一半粘贴不该丢字）、
   编辑/签到/设置/重选时长里放行（那些输入框原生支持多行粘贴）、输入法组合态放行。
   单行粘贴原样走输入框，不受影响。
+- **应用内检查更新（轻量档占位）**：设置底部「检查更新」卡，`UpdateChecker` 调
+  GitHub Releases API（`repos/lodrg/kairos/releases/latest`）拿 tag_name，与
+  `CFBundleShortVersionString` 做 major.minor.patch 数字比较；有新版 → 主题色一行
+  「发现新版本 vX · 点此打开下载页」（`NSWorkspace.open` 直达 tag 页）；失败显示
+  网络/限流提示（匿名接口 60 次/小时）。**不做自动下载安装**——ad-hoc 签名 + 未公证
+  下自动更新会被 Gatekeeper 拦，等有 Apple Developer 账号 + 公证后换成 Sparkle，
+  届时只需替换 UpdateChecker 实现。注意裸二进制（非 .app）读不到 bundle 版本号，
+  会退回 0.0.0、误报有新版——以打包后的行为为准。
 - **底部计时光带（非唤起态的环境式时间感）**：覆盖层**收起**时，所有画布中最快到期、
   未到期的活跃计时器显示为屏幕底部一条 3pt 消耗光带（`TimerBarView` + `TimerProgressBar`）。
   架构：AppDelegate 每屏建一条常驻浮动窗口（`buildTimerBarWindows`，贴 visibleFrame 底部

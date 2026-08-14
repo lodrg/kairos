@@ -259,6 +259,14 @@ final class GoalStore: ObservableObject {
 
 // MARK: - 覆盖层状态（呼出动画 / 输入 / 编辑）
 
+/// 检查更新的结果状态
+enum UpdateStatus: Equatable {
+    case checking
+    case upToDate
+    case updateAvailable(version: String)
+    case failed
+}
+
 @MainActor
 final class OverlayModel: ObservableObject {
     @Published var animatedIn = false
@@ -299,6 +307,8 @@ final class OverlayModel: ObservableObject {
     @Published var showHotkeyConflicted = false
     /// 正在播删除淡出动画的目标（淡出中点击可取消删除，播完从 store 移除）
     @Published var deletingIDs: Set<UUID> = []
+    /// 检查更新的结果状态（纯 UI 瞬态，不落盘）
+    @Published var updateStatus: UpdateStatus?
     /// 首启引导卡（只出现一次，settings.onboardingSeen 控制）
     @Published var showOnboarding = false
     /// 输入法组合态：拼音上屏前 binding 是空的，自绘 placeholder 靠这个标志躲开组合期。
@@ -325,6 +335,7 @@ final class OverlayModel: ObservableObject {
         showSettings = false
         isRecordingHotkey = false
         hotkeyRejectMessage = nil
+        updateStatus = nil
         showOnboarding = false
         showHistory = false
         checkInFeedback = ""

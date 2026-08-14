@@ -518,26 +518,78 @@ struct SettingsPanel: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 历史 + 帮助（工具，两张小卡并排）
+    // MARK: - 历史 + 帮助 + 更新（工具，三张小卡并排）
 
-    /// 曾经的目标和签到反馈 → 历史子面板；重播首次引导 → 引导卡。
-    /// 两个低频入口并排，不再各占一整段
+    /// 曾经的目标和签到反馈 → 历史子面板；重播首次引导 → 引导卡；
+    /// 检查更新 → GitHub API 对比版本（轻量档，以后换 Sparkle）
     private var linksCard: some View {
-        HStack(spacing: 12) {
-            linkButton(
-                icon: "clock.arrow.circlepath",
-                title: l10n.history,
-                subtitle: l10n.viewHistory,
-                action: onOpenHistory
-            )
-            linkButton(
-                icon: "questionmark.circle",
-                title: l10n.helpSection,
-                subtitle: l10n.replayOnboarding
-            ) {
-                model.showSettings = false
-                model.showOnboarding = true
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 12) {
+                linkButton(
+                    icon: "clock.arrow.circlepath",
+                    title: l10n.history,
+                    subtitle: l10n.viewHistory,
+                    action: onOpenHistory
+                )
+                linkButton(
+                    icon: "questionmark.circle",
+                    title: l10n.helpSection,
+                    subtitle: l10n.replayOnboarding
+                ) {
+                    model.showSettings = false
+                    model.showOnboarding = true
+                }
+                linkButton(
+                    icon: "arrow.down.circle",
+                    title: l10n.checkForUpdates,
+                    subtitle: String(format: l10n.currentVersionFormat, UpdateChecker.currentVersion),
+                    action: checkForUpdates
+                )
             }
+            updateStatusRow
+        }
+    }
+
+    /// 检查更新的结果：检查中 / 已最新 / 发现新版（点一下打开下载页）/ 失败
+    @ViewBuilder
+    private var updateStatusRow: some View {
+        switch model.updateStatus {
+        case .checking:
+            Text(l10n.updateChecking)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.5))
+        case .upToDate:
+            Text(l10n.updateUpToDate)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.5))
+        case .updateAvailable(let version):
+            Button {
+                NSWorkspace.shared.open(UpdateChecker.downloadPageURL(for: version))
+            } label: {
+                Text(String(format: l10n.updateAvailableFormat, version))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Palette.accent)
+            }
+            .buttonStyle(.plain)
+        case .failed:
+            Text(l10n.updateFailed)
+                .font(.system(size: 12))
+                .foregroundStyle(.white.opacity(0.5))
+        case nil:
+            EmptyView()
+        }
+    }
+
+    private func checkForUpdates() {
+        model.updateStatus = .checking
+        Task { @MainActor in
+            guard let latest = await UpdateChecker.latestVersion() else {
+                model.updateStatus = .failed
+                return
+            }
+            model.updateStatus = UpdateChecker.isNewer(latest, than: UpdateChecker.currentVersion)
+                ? .updateAvailable(version: latest)
+                : .upToDate
         }
     }
 
